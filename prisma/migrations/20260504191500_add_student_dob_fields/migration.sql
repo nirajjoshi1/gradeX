@@ -1,0 +1,2 @@
+ALTER TABLE "Student" ADD COLUMN "dobAd" TEXT;
+ALTER TABLE "Student" ADD COLUMN "dobBs" TEXT;

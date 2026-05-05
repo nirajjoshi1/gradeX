@@ -1,0 +1,259 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  TEACHER
+  STUDENT
+}
+
+enum ResultStatus {
+  PASS
+  FAIL
+  ABSENT
+  CUSTOM
+}
+
+model School {
+  id        String   @id @default(cuid())
+  name      String
+  address   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users      User[]
+  classes    Class[]
+  subjects   Subject[]
+  exams      Exam[]
+  gradeRules GradeRule[]
+  students   Student[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  schoolId     String?
+  name         String
+  username     String   @unique
+  email        String   @unique
+  passwordHash String
+  role         Role
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  school             School?             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  teacherAssignments TeacherAssignment[] @relation("TeacherAssignments")
+  studentProfile     Student?
+
+  @@index([schoolId, role])
+}
+
+model Class {
+  id        String   @id @default(cuid())
+  schoolId  String
+  name      String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  school             School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  sections           Section[]
+  teacherAssignments TeacherAssignment[]
+  examSubjects       ExamSubject[]
+  students           Student[]
+
+  @@unique([schoolId, name])
+  @@index([schoolId, sortOrder])
+}
+
+model Section {
+  id        String   @id @default(cuid())
+  schoolId  String
+  classId   String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  class              Class               @relation(fields: [classId], references: [id], onDelete: Cascade)
+  students           Student[]
+  teacherAssignments TeacherAssignment[]
+
+  @@unique([classId, name])
+  @@index([schoolId])
+}
+
+model Subject {
+  id                 String   @id @default(cuid())
+  schoolId           String
+  code               String
+  name               String
+  creditHours        Decimal  @db.Decimal(5, 2)
+  theoryFullMarks    Decimal  @db.Decimal(7, 2)
+  practicalFullMarks Decimal  @db.Decimal(7, 2)
+  passPercentage     Decimal  @default(40) @db.Decimal(5, 2)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  school             School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  teacherAssignments TeacherAssignment[]
+  examSubjects       ExamSubject[]
+  marks              Mark[]
+  results            Result[]
+
+  @@unique([schoolId, code])
+  @@index([schoolId, name])
+}
+
+model TeacherAssignment {
+  id        String   @id @default(cuid())
+  schoolId  String
+  teacherId String
+  classId   String
+  sectionId String?
+  subjectId String
+  createdAt DateTime @default(now())
+
+  teacher User     @relation("TeacherAssignments", fields: [teacherId], references: [id], onDelete: Cascade)
+  class   Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  section Section? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  subject Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, classId, sectionId, subjectId])
+}
+
+model Exam {
+  id          String   @id @default(cuid())
+  schoolId    String
+  name        String
+  startsAt    DateTime?
+  endsAt      DateTime?
+  isPublished Boolean  @default(false)
+  publishedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  school       School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  examSubjects ExamSubject[]
+  marks        Mark[]
+  results      Result[]
+
+  @@unique([schoolId, name])
+  @@index([schoolId, isPublished])
+}
+
+model ExamSubject {
+  id        String   @id @default(cuid())
+  schoolId  String
+  examId    String
+  classId   String
+  subjectId String
+  isLocked  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  exam    Exam    @relation(fields: [examId], references: [id], onDelete: Cascade)
+  class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([examId, classId, subjectId])
+  @@index([schoolId, classId, subjectId])
+}
+
+model Student {
+  id           String   @id @default(cuid())
+  schoolId     String
+  userId       String?  @unique
+  classId      String
+  sectionId    String?
+  admissionNo  String
+  rollNo       String
+  name         String
+  guardianName String?
+  dobAd        String?
+  dobBs        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  school  School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  class   Class    @relation(fields: [classId], references: [id], onDelete: Restrict)
+  section Section? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  marks   Mark[]
+  results Result[]
+
+  @@unique([schoolId, admissionNo])
+  @@unique([classId, sectionId, rollNo])
+  @@index([schoolId, classId, sectionId])
+}
+
+model Mark {
+  id             String       @id @default(cuid())
+  schoolId       String
+  examId         String
+  studentId      String
+  subjectId      String
+  theoryMarks    Decimal?     @db.Decimal(7, 2)
+  practicalMarks Decimal?     @db.Decimal(7, 2)
+  isAbsent       Boolean      @default(false)
+  status         ResultStatus @default(PASS)
+  remarks        String?
+  enteredById    String
+  lockedAt       DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  exam    Exam    @relation(fields: [examId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+
+  @@unique([examId, studentId, subjectId])
+  @@index([schoolId, examId, subjectId])
+}
+
+model GradeRule {
+  id            String   @id @default(cuid())
+  schoolId      String
+  label         String
+  minPercentage Decimal  @db.Decimal(5, 2)
+  maxPercentage Decimal  @db.Decimal(5, 2)
+  gpa           Decimal  @db.Decimal(4, 2)
+  remarks       String?
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, sortOrder])
+}
+
+model Result {
+  id              String       @id @default(cuid())
+  schoolId        String
+  examId          String
+  studentId       String
+  subjectId       String
+  theoryGrade     String?
+  theoryGpa       Decimal?     @db.Decimal(4, 2)
+  practicalGrade  String?
+  practicalGpa    Decimal?     @db.Decimal(4, 2)
+  finalPercentage Decimal?     @db.Decimal(5, 2)
+  finalGrade      String?
+  finalGpa        Decimal?     @db.Decimal(4, 2)
+  weightedGpa     Decimal?     @db.Decimal(6, 3)
+  status          ResultStatus @default(PASS)
+  remarks         String?
+  calculatedAt    DateTime     @default(now())
+
+  exam    Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  student Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([examId, studentId, subjectId])
+  @@index([schoolId, examId, studentId])
+}
