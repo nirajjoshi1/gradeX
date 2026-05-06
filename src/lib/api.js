@@ -1,4 +1,5 @@
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:4000/api'
+const isProd = import.meta.env.PROD
+const API_BASE = import.meta.env.VITE_API_URL || (isProd ? '/api' : 'http://localhost:4000/api')
 
 export async function api(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
