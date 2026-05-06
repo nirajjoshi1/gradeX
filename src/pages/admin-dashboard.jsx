@@ -1,69 +1,48 @@
-import { useEffect, useMemo, useState, useRef } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ADToBS, BSToAD } from 'bikram-sambat-js'
 import { useSearchParams, Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
   BookOpen,
   CalendarDays,
-  CheckCircle2,
   GraduationCap,
   Layers3,
-  Loader2,
-  Pencil,
   Plus,
   Save,
-  Send,
-  ShieldCheck,
-  Trash2,
-  Upload,
   Users,
-  Building2,
-  Globe,
-  Mail,
-  Phone,
-  MapPin,
-  Image as ImageIcon,
-  PenTool,
-  Settings,
   FileSpreadsheet
 } from 'lucide-react'
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
-import { api, apiBase } from '@/lib/api'
+import { api } from '@/lib/api'
+import { syncDobFromAd, syncDobFromBs } from '@/lib/utils'
+
+// Modularized Components
+import { MetricTile, WorkflowPanel, LoadingButton } from '@/components/admin/shared'
+import { 
+  ClassTable, 
+  SubjectTable, 
+  ExamTable, 
+  TeacherTable, 
+  StudentTable, 
+  AssignmentTable,
+  ExamSubjectSummary 
+} from '@/components/admin/tables'
+import { 
+  CreateClassDialog, 
+  CreateSubjectDialog, 
+  CreateExamDialog, 
+  CreateTeacherDialog, 
+  CreateStudentDialog, 
+  AssignTeacherDialog, 
+  AttachSubjectDialog,
+  ClassManagementDialog,
+  SubjectManagerDialog,
+  TeacherAssignmentManagerDialog
+} from '@/components/admin/dialogs'
+import { GradeRuleEditor, ReportCardManager, ResultLedger, SettingsView } from '@/components/admin/specialized'
 
 const defaultRules = [
   { label: 'A+', minPercentage: 90, maxPercentage: 100, gpa: 4 },
@@ -75,7 +54,7 @@ const defaultRules = [
   { label: 'NG', minPercentage: 0, maxPercentage: 39.99, gpa: 0 },
 ]
 
-const adminViews = new Set(['dashboard', 'classes', 'subjects', 'exams', 'teachers', 'students', 'assignments', 'grading', 'publish', 'settings'])
+const adminViews = new Set(['dashboard', 'classes', 'subjects', 'exams', 'teachers', 'students', 'grading', 'publish', 'settings', 'ledger'])
 
 const initialForms = {
   className: 'Grade 10',
@@ -99,7 +78,7 @@ const initialForms = {
 
 const initialEditForms = {
   className: '',
-  sections: '', // Not used during edit
+  sections: '', 
   subjectName: '',
   subjectCode: '',
   creditHours: 0,
@@ -118,24 +97,6 @@ const initialEditForms = {
   examName: '',
 }
 
-function syncDobFromAd(setForms, forms, dobAd) {
-  try {
-    setForms({ ...forms, dobAd, dobBs: dobAd ? ADToBS(dobAd) : '' })
-    return
-  } catch {
-    setForms({ ...forms, dobAd })
-  }
-}
-
-function syncDobFromBs(setForms, forms, dobBs) {
-  try {
-    setForms({ ...forms, dobBs, dobAd: dobBs ? BSToAD(dobBs) : '' })
-    return
-  } catch {
-    setForms({ ...forms, dobBs })
-  }
-}
-
 export function AdminDashboard() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [data, setData] = useState({
@@ -144,7 +105,8 @@ export function AdminDashboard() {
     subjects: [],
     teachers: [],
     students: { items: [] },
-    assignments: [],
+    teachers: [],
+    students: { items: [] },
     exams: [],
     gradeRules: [],
   })
@@ -154,6 +116,8 @@ export function AdminDashboard() {
   const [loading, setLoading] = useState({ page: true })
   const [openDialog, setOpenDialog] = useState(null)
   const [editId, setEditId] = useState(null)
+  const [selectedClass, setSelectedClass] = useState(null)
+  const [selectedSubject, setSelectedSubject] = useState(null)
   const activeView = adminViews.has(searchParams.get('view')) ? searchParams.get('view') : 'dashboard'
 
   useEffect(() => {
@@ -163,27 +127,26 @@ export function AdminDashboard() {
   }, [searchParams, setSearchParams])
 
   async function load() {
-    setLoading((current) => ({ ...current, page: true }))
-    try {
-      const [overview, classes, subjects, teachers, students, assignments, exams, gradeRules] =
-        await Promise.all([
+    const promise = Promise.all([
           api('/admin/overview'),
           api('/admin/classes'),
           api('/admin/subjects'),
           api('/admin/teachers'),
           api('/admin/students?pageSize=20'),
-          api('/admin/assignments'),
           api('/admin/exams'),
           api('/admin/grade-rules'),
         ])
 
-      setData({ overview, classes, subjects, teachers, students, assignments, exams, gradeRules })
+    try {
+      const [overview, classes, subjects, teachers, students, exams, gradeRules] = await promise
+      setData({ overview, classes, subjects, teachers, students, exams, gradeRules })
       setRuleDraft(gradeRules.length ? gradeRules : defaultRules)
     } catch (error) {
       toast.error(error.message)
     } finally {
       setLoading((current) => ({ ...current, page: false }))
     }
+    return promise
   }
 
   useEffect(() => {
@@ -193,11 +156,6 @@ export function AdminDashboard() {
   const sectionsForClass = useMemo(
     () => data.classes.find((item) => item.id === selected.studentClassId)?.sections ?? [],
     [data.classes, selected.studentClassId],
-  )
-
-  const sectionsForAssignmentClass = useMemo(
-    () => data.classes.find((item) => item.id === selected.classId)?.sections ?? [],
-    [data.classes, selected.classId],
   )
 
   const stats = useMemo(
@@ -255,7 +213,7 @@ export function AdminDashboard() {
     const method = editId ? 'PUT' : 'POST'
     const body = {
       name: forms.className,
-      sortOrder: Number(forms.className.match(/\d+/)?.[0] ?? 0),
+      sortOrder: Number(forms.className.match(/\d+/)?.[0] ?? 1),
       ...(editId ? {} : { sections: forms.sections.split(',').map((section) => section.trim()).filter(Boolean) }),
     }
 
@@ -322,32 +280,6 @@ export function AdminDashboard() {
 
     await runAction('exam', editId ? 'Exam updated' : 'Exam created', () =>
       api(url, { method, body: JSON.stringify(body) }),
-    )
-  }
-
-  async function assignTeacher() {
-    await runAction('assignment', 'Teacher assigned', () =>
-      api('/admin/assignments', {
-        method: 'POST',
-        body: JSON.stringify({
-          teacherId: selected.teacherId,
-          classId: selected.classId,
-          sectionId: selected.assignmentSectionId || null,
-          subjectId: selected.subjectId,
-        }),
-      }),
-    )
-  }
-
-  async function attachSubject() {
-    await runAction('attachSubject', 'Subject attached to exam', () =>
-      api(`/admin/exams/${selected.examId}/subjects`, {
-        method: 'POST',
-        body: JSON.stringify({
-          classId: selected.classId,
-          subjectId: selected.subjectId,
-        }),
-      }),
     )
   }
 
@@ -433,7 +365,21 @@ export function AdminDashboard() {
             description="Create grade levels and their sections."
             title="Class management"
           >
-            <ClassTable classes={data.classes} loading={loading.page} onEdit={(id, item) => openEdit('class', id, { className: item.name })} onDelete={(id) => executeDelete(`/admin/classes/${id}`, 'Class')} />
+            <ClassTable 
+              classes={data.classes} 
+              loading={loading.page} 
+              onManage={(item) => { setSelectedClass(item); setOpenDialog('manageSections') }}
+            />
+            <ClassManagementDialog 
+              classItem={selectedClass} 
+              teachers={data.teachers} 
+              allClasses={data.classes}
+              allSubjects={data.subjects}
+              open={openDialog === 'manageSections'} 
+              setOpen={(open) => setOpenDialog(open ? 'manageSections' : null)} 
+              onUpdate={load} 
+              onDeleteClass={(id) => executeDelete(`/admin/classes/${id}`, 'Class')}
+            />
           </WorkflowPanel>
         </TabsContent>
 
@@ -453,7 +399,19 @@ export function AdminDashboard() {
             description="Configure full marks, practical marks, and credit hours per subject."
             title="Subject system"
           >
-            <SubjectTable subjects={data.subjects} loading={loading.page} onEdit={(id, item) => openEdit('subject', id, { subjectCode: item.code, subjectName: item.name, creditHours: item.creditHours, theoryFullMarks: item.theoryFullMarks, practicalFullMarks: item.practicalFullMarks })} onDelete={(id) => executeDelete(`/admin/subjects/${id}`, 'Subject')} />
+            <SubjectTable 
+              subjects={data.subjects} 
+              loading={loading.page} 
+              onManage={(item) => { setSelectedSubject(item); setOpenDialog('manageSubject') }}
+            />
+            <SubjectManagerDialog
+              subject={selectedSubject}
+              allClasses={data.classes}
+              open={openDialog === 'manageSubject'}
+              setOpen={(open) => setOpenDialog(open ? 'manageSubject' : null)}
+              onUpdate={load}
+              onDelete={(id) => executeDelete(`/admin/subjects/${id}`, 'Subject')}
+            />
           </WorkflowPanel>
         </TabsContent>
 
@@ -467,7 +425,7 @@ export function AdminDashboard() {
           </WorkflowPanel>
         </TabsContent>
 
-        <TabsContent value="teachers" className="mt-0">
+        <TabsContent value="teachers" className="mt-0 space-y-6">
           <WorkflowPanel
             action={
               <div className="flex gap-2">
@@ -483,7 +441,23 @@ export function AdminDashboard() {
             description="Create teacher accounts and manage their access."
             title="Teacher accounts"
           >
-            <TeacherTable teachers={data.teachers} loading={loading.page} onEdit={(id, item) => openEdit('teacher', id, { teacherName: item.name, teacherUsername: item.username, teacherIsActive: item.isActive })} onDelete={(id) => executeDelete(`/admin/teachers/${id}`, 'Teacher')} />
+            <TeacherTable 
+              teachers={data.teachers} 
+              loading={loading.page} 
+              onManageAssignments={(teacherId) => {
+                setSelected({ ...selected, teacherId })
+                setOpenDialog('manageTeacherAssignments')
+              }}
+            />
+            <TeacherAssignmentManagerDialog 
+              teacher={data.teachers.find(t => t.id === selected.teacherId)}
+              assignments={data.teachers.find(t => t.id === selected.teacherId)?.teacherAssignments || []}
+              classes={data.classes}
+              subjects={data.subjects}
+              open={openDialog === 'manageTeacherAssignments'}
+              setOpen={(open) => setOpenDialog(open ? 'manageTeacherAssignments' : null)}
+              onUpdate={load}
+            />
           </WorkflowPanel>
         </TabsContent>
 
@@ -497,7 +471,21 @@ export function AdminDashboard() {
                     Bulk Import
                   </Link>
                 </Button>
-                <CreateStudentDialog editId={editId} forms={forms} setForms={setForms} selected={selected} setSelected={setSelected} classes={data.classes} sections={sectionsForClass} loading={loading.student} open={openDialog === 'student'} setOpen={(open) => !open ? setOpenDialog(null) : openCreate('student')} onSubmit={saveStudent} />
+                <CreateStudentDialog 
+                  editId={editId} 
+                  forms={forms} 
+                  setForms={setForms} 
+                  selected={selected} 
+                  setSelected={setSelected} 
+                  classes={data.classes} 
+                  sections={sectionsForClass} 
+                  loading={loading.student} 
+                  open={openDialog === 'student'} 
+                  setOpen={(open) => !open ? setOpenDialog(null) : openCreate('student')} 
+                  onSubmit={saveStudent}
+                  syncDobFromAd={(sf, f, v) => syncDobFromAd(sf, f, v, ADToBS)}
+                  syncDobFromBs={(sf, f, v) => syncDobFromBs(sf, f, v, BSToAD)}
+                />
               </div>
             }
             description="Enroll students into class and section records."
@@ -505,26 +493,6 @@ export function AdminDashboard() {
           >
             <StudentTable students={data.students.items} loading={loading.page} onEdit={(id, item) => { setSelected({ ...selected, studentClassId: item.classId, studentSectionId: item.sectionId }); openEdit('student', id, { studentName: item.name, admissionNo: item.admissionNo, rollNo: item.rollNo, guardianName: item.guardianName ?? '', dobAd: item.dobAd ?? '', dobBs: item.dobBs ?? '' }) }} onDelete={(id) => executeDelete(`/admin/students/${id}`, 'Student')} />
           </WorkflowPanel>
-        </TabsContent>
-
-        <TabsContent value="assignments" className="mt-0">
-          <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
-            <WorkflowPanel
-            action={<AssignTeacherDialog selected={selected} setSelected={setSelected} teachers={data.teachers} classes={data.classes} sections={sectionsForAssignmentClass} subjects={data.subjects} loading={loading.assignment} open={openDialog === 'assignment'} setOpen={(open) => !open ? setOpenDialog(null) : openCreate('assignment')} onSubmit={assignTeacher} />}
-            description="Map teacher to class, section, and subject. Backend RBAC uses this table."
-            title="Teacher assignments"
-            >
-              <AssignmentTable assignments={data.assignments} loading={loading.page} onDelete={(id) => executeDelete(`/admin/assignments/${id}`, 'Assignment')} />
-            </WorkflowPanel>
-
-            <WorkflowPanel
-              action={<AttachSubjectDialog selected={selected} setSelected={setSelected} exams={data.exams} classes={data.classes} subjects={data.subjects} loading={loading.attachSubject} open={openDialog === 'attach'} setOpen={(open) => !open ? setOpenDialog(null) : openCreate('attach')} onSubmit={attachSubject} />}
-              description="Attach class-subject rows to an exam for marks entry."
-              title="Exam subject setup"
-            >
-              <ExamSubjectSummary exams={data.exams} loading={loading.page} onDelete={(examId, examSubjectId) => executeDelete(`/admin/exams/${examId}/subjects/${examSubjectId}`, 'Attached Subject')} />
-            </WorkflowPanel>
-          </div>
         </TabsContent>
 
         <TabsContent value="grading" className="mt-0">
@@ -545,6 +513,14 @@ export function AdminDashboard() {
             <GradeRuleEditor rules={ruleDraft} updateRule={updateRule} />
           </WorkflowPanel>
         </TabsContent>
+        <TabsContent value="ledger" className="mt-0">
+          <WorkflowPanel
+            description="View full class-wise exam ledger with subject marks and grades."
+            title="Result Ledger"
+          >
+            <ResultLedger exams={data.exams} classes={data.classes} />
+          </WorkflowPanel>
+        </TabsContent>
 
         <TabsContent value="publish" className="mt-0">
           <WorkflowPanel
@@ -558,856 +534,6 @@ export function AdminDashboard() {
           <SettingsView />
         </TabsContent>
       </Tabs>
-    </div>
-  )
-}
-
-function SettingsView() {
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [uploadingField, setUploadingField] = useState(null)
-  const [settings, setSettings] = useState({
-    name: '',
-    address: '',
-    phone: '',
-    email: '',
-    website: '',
-    logoUrl: '',
-    signatureUrl: '',
-  })
-
-  // We'll use a hidden input to trigger the system file picker
-  const fileInputRef = useRef(null)
-
-  async function loadSettings() {
-    try {
-      const data = await api('/admin/settings')
-      setSettings({
-        name: data.name || '',
-        address: data.address || '',
-        phone: data.phone || '',
-        email: data.email || '',
-        website: data.website || '',
-        logoUrl: data.logoUrl || '',
-        signatureUrl: data.signatureUrl || '',
-      })
-    } catch (error) {
-      toast.error('Failed to load school settings')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    loadSettings()
-  }, [])
-
-  async function handleSave(e) {
-    e.preventDefault()
-    setSaving(true)
-    try {
-      await api('/admin/settings', {
-        method: 'PATCH',
-        body: JSON.stringify(settings),
-      })
-      toast.success('School settings updated successfully')
-    } catch (error) {
-      toast.error(error.message || 'Failed to save settings')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleNativeUpload = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file || !uploadingField) return
-
-    const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME
-    const uploadPreset = 'gradex_unsigned' // Ensure this is UNSIGNED in Cloudinary
-
-    if (!cloudName) {
-      toast.error('VITE_CLOUDINARY_CLOUD_NAME is missing in .env')
-      return
-    }
-
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('upload_preset', uploadPreset)
-
-    const loadingToast = toast.loading(`Uploading ${uploadingField === 'logoUrl' ? 'Logo' : 'Signature'}...`)
-
-    try {
-      const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-        method: 'POST',
-        body: formData,
-      })
-
-      const data = await response.json()
-      if (data.secure_url) {
-        setSettings(prev => ({ ...prev, [uploadingField]: data.secure_url }))
-        toast.success('Upload complete!', { id: loadingToast })
-      } else {
-        throw new Error(data.error?.message || 'Upload failed')
-      }
-    } catch (error) {
-      toast.error(error.message, { id: loadingToast })
-    } finally {
-      setUploadingField(null)
-      e.target.value = '' // Reset input
-    }
-  }
-
-  const triggerPicker = (field) => {
-    setUploadingField(field)
-    fileInputRef.current?.click()
-  }
-
-
-  if (loading) {
-    return (
-      <div className="flex h-[400px] items-center justify-center">
-        <Loader2 className="size-8 animate-spin text-primary" />
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">School Profile</h2>
-          <p className="text-muted-foreground">Customize your school branding and contact details.</p>
-        </div>
-        <Button type="submit" form="settings-form" disabled={saving}>
-          {saving ? 'Saving...' : 'Save Settings'}
-          <Save className="ml-2 size-4" />
-        </Button>
-      </div>
-
-      <form id="settings-form" onSubmit={handleSave} className="grid gap-6 sm:grid-cols-2">
-        <Card className="sm:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Building2 className="size-5 text-primary" /> General Identity
-            </CardTitle>
-            <CardDescription>Primary details displayed on reports and sidebar.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-6 sm:grid-cols-2">
-            <div className="grid gap-2">
-              <Label htmlFor="name">School Name</Label>
-              <Input
-                id="name"
-                value={settings.name}
-                onChange={e => setSettings({ ...settings, name: e.target.value })}
-                required
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="address">Address</Label>
-              <Input
-                id="address"
-                value={settings.address}
-                onChange={e => setSettings({ ...settings, address: e.target.value })}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="phone">Phone Number</Label>
-              <div className="relative">
-                <Phone className="absolute left-3 top-3 size-4 text-muted-foreground" />
-                <Input
-                  id="phone"
-                  className="pl-9"
-                  value={settings.phone}
-                  onChange={e => setSettings({ ...settings, phone: e.target.value })}
-                />
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="email">Email Address</Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-3 size-4 text-muted-foreground" />
-                <Input
-                  id="email"
-                  type="email"
-                  className="pl-9"
-                  value={settings.email}
-                  onChange={e => setSettings({ ...settings, email: e.target.value })}
-                />
-              </div>
-            </div>
-            <div className="grid gap-2 sm:col-span-2">
-              <Label htmlFor="website">Website URL</Label>
-              <div className="relative">
-                <Globe className="absolute left-3 top-3 size-4 text-muted-foreground" />
-                <Input
-                  id="website"
-                  className="pl-9"
-                  value={settings.website}
-                  onChange={e => setSettings({ ...settings, website: e.target.value })}
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <ImageIcon className="size-5 text-primary" /> Logo
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col items-center justify-center">
-            <div className="relative mb-4 flex size-32 items-center justify-center overflow-hidden rounded-xl border-2 border-dashed bg-muted/50">
-              {settings.logoUrl ? (
-                <img src={settings.logoUrl} alt="Logo" className="h-full w-full object-contain p-2" />
-              ) : (
-                <ImageIcon className="size-8 text-muted-foreground" />
-              )}
-            </div>
-            <Button type="button" variant="outline" size="sm" onClick={() => triggerPicker('logoUrl')}>
-              Upload Logo
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <PenTool className="size-5 text-primary" /> Signature
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col items-center justify-center">
-            <div className="relative mb-4 flex h-32 w-full items-center justify-center overflow-hidden rounded-xl border-2 border-dashed bg-muted/50">
-              {settings.signatureUrl ? (
-                <img src={settings.signatureUrl} alt="Signature" className="h-full w-full object-contain p-2" />
-              ) : (
-                <PenTool className="size-8 text-muted-foreground" />
-              )}
-            </div>
-            <Button type="button" variant="outline" size="sm" onClick={() => triggerPicker('signatureUrl')}>
-              Upload Signature
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Hidden File Input */}
-        <input 
-          type="file" 
-          ref={fileInputRef} 
-          className="hidden" 
-          accept="image/*"
-          onChange={handleNativeUpload} 
-        />
-      </form>
-    </div>
-  )
-}
-
-function LoadingButton({ loading, children, disabled, ...props }) {
-  return (
-    <Button disabled={loading || disabled} {...props}>
-      {loading ? <Loader2 className="animate-spin" /> : children}
-      {loading ? 'Working...' : null}
-    </Button>
-  )
-}
-
-function MetricTile({ label, value, icon: Icon, compact = false, loading = false }) {
-  return (
-    <Card className="rounded-lg border-0 bg-card/95 shadow-none transition hover:-translate-y-0.5 hover:bg-muted/20">
-      <CardHeader className={compact ? 'p-3' : 'p-4'}>
-        <div className="flex items-center justify-between">
-          <CardDescription>{label}</CardDescription>
-          <Icon className="size-4 text-muted-foreground" />
-        </div>
-        <CardTitle className={compact ? 'text-xl' : 'text-2xl'}>
-          {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : value}
-        </CardTitle>
-      </CardHeader>
-    </Card>
-  )
-}
-
-function WorkflowPanel({ title, description, action, children }) {
-  return (
-    <Card className="rounded-lg shadow-sm">
-      <CardHeader>
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <CardTitle>{title}</CardTitle>
-            <CardDescription>{description}</CardDescription>
-          </div>
-          {action}
-        </div>
-      </CardHeader>
-      <CardContent>{children}</CardContent>
-    </Card>
-  )
-}
-
-function ActionDialog({ open, setOpen, title, description, trigger, children, footer }) {
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-4">{children}</div>
-        <DialogFooter>{footer}</DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="space-y-1.5">
-      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </span>
-      {children}
-    </label>
-  )
-}
-
-function Selector({ label, items, value, onValueChange }) {
-  return (
-    <Select value={value} onValueChange={onValueChange}>
-      <SelectTrigger className="w-full">
-        <SelectValue placeholder={label} />
-      </SelectTrigger>
-      <SelectContent>
-        {items.map((item) => (
-          <SelectItem key={item.id} value={item.id}>
-            {item.name}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  )
-}
-
-function ActionMenu({ onEdit, onDelete, disabled }) {
-  return (
-    <div className="flex justify-end gap-1">
-      {onEdit && (
-        <Button variant="ghost" size="icon" onClick={onEdit} disabled={disabled} className="size-8 text-muted-foreground hover:text-foreground">
-          <Pencil className="size-4" />
-        </Button>
-      )}
-      {onDelete && (
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="ghost" size="icon" disabled={disabled} className="size-8 text-muted-foreground hover:text-destructive">
-              <Trash2 className="size-4" />
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete this record and any dependent data.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={onDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      )}
-    </div>
-  )
-}
-
-function CreateClassDialog({ editId, forms, setForms, loading, open, setOpen, onSubmit }) {
-  return (
-    <ActionDialog
-      open={open}
-      setOpen={setOpen}
-      title={editId ? "Edit class" : "Add class"}
-      description="Create one class and optional comma-separated sections."
-      trigger={<Button><Plus /> Add class</Button>}
-      footer={<LoadingButton loading={loading} onClick={onSubmit}><Save /> {editId ? "Save changes" : "Create class"}</LoadingButton>}
-    >
-      <div className="grid gap-3 md:grid-cols-[1fr_12rem]">
-        <Field label="Class name">
-          <Input value={forms.className} onChange={(e) => setForms({ ...forms, className: e.target.value })} />
-        </Field>
-        {!editId && (
-          <Field label="Sections">
-            <Input value={forms.sections} onChange={(e) => setForms({ ...forms, sections: e.target.value })} />
-          </Field>
-        )}
-      </div>
-      {!editId && (
-        <Alert>
-          <Layers3 />
-          <AlertTitle>Example</AlertTitle>
-          <AlertDescription>Use `Grade 10` with sections like `A,B,C`.</AlertDescription>
-        </Alert>
-      )}
-    </ActionDialog>
-  )
-}
-
-function CreateSubjectDialog({ editId, forms, setForms, loading, open, setOpen, onSubmit }) {
-  return (
-    <ActionDialog
-      open={open}
-      setOpen={setOpen}
-      title={editId ? "Edit subject" : "Add subject"}
-      description="Define marks split and credit hours. GPA weighting uses credit hours."
-      trigger={<Button><Plus /> Add subject</Button>}
-      footer={<LoadingButton loading={loading} onClick={onSubmit}><Save /> {editId ? "Save changes" : "Create subject"}</LoadingButton>}
-    >
-      <div className="grid gap-3 md:grid-cols-[9rem_1fr]">
-        <Field label="Code">
-          <Input value={forms.subjectCode} onChange={(e) => setForms({ ...forms, subjectCode: e.target.value })} />
-        </Field>
-        <Field label="Subject name">
-          <Input value={forms.subjectName} onChange={(e) => setForms({ ...forms, subjectName: e.target.value })} />
-        </Field>
-      </div>
-      <div className="grid gap-3 md:grid-cols-3">
-        <Field label="Credit hours">
-          <Input type="number" value={forms.creditHours} onChange={(e) => setForms({ ...forms, creditHours: e.target.value })} />
-        </Field>
-        <Field label="Theory marks">
-          <Input type="number" value={forms.theoryFullMarks} onChange={(e) => setForms({ ...forms, theoryFullMarks: e.target.value })} />
-        </Field>
-        <Field label="Practical marks">
-          <Input type="number" value={forms.practicalFullMarks} onChange={(e) => setForms({ ...forms, practicalFullMarks: e.target.value })} />
-        </Field>
-      </div>
-    </ActionDialog>
-  )
-}
-
-function CreateExamDialog({ editId, forms, setForms, loading, open, setOpen, onSubmit }) {
-  return (
-    <ActionDialog
-      open={open}
-      setOpen={setOpen}
-      title={editId ? "Edit exam" : "Create exam"}
-      description="Create an exam cycle. Attach class-subject rows after creation."
-      trigger={<Button><Plus /> Create exam</Button>}
-      footer={<LoadingButton loading={loading} onClick={onSubmit}><Save /> {editId ? "Save changes" : "Create exam"}</LoadingButton>}
-    >
-      <Field label="Exam name">
-        <Input value={forms.examName} onChange={(e) => setForms({ ...forms, examName: e.target.value })} />
-      </Field>
-    </ActionDialog>
-  )
-}
-
-function CreateTeacherDialog({ editId, forms, setForms, loading, open, setOpen, onSubmit }) {
-  return (
-    <ActionDialog
-      open={open}
-      setOpen={setOpen}
-      title={editId ? "Edit teacher account" : "Create teacher account"}
-      description={editId ? "Update teacher details or reset their password." : "Create the username and temporary password that you will share with the teacher."}
-      trigger={<Button><Plus /> Add teacher</Button>}
-      footer={<LoadingButton loading={loading} onClick={onSubmit}><Save /> {editId ? "Save changes" : "Create teacher"}</LoadingButton>}
-    >
-      <div className="grid gap-3 md:grid-cols-2">
-        <Field label="Teacher name">
-          <Input value={forms.teacherName} onChange={(e) => setForms({ ...forms, teacherName: e.target.value })} />
-        </Field>
-        <Field label="Username">
-          <Input value={forms.teacherUsername} onChange={(e) => setForms({ ...forms, teacherUsername: e.target.value })} />
-        </Field>
-        <Field label={editId ? "New password (optional)" : "Temporary password"}>
-          <Input type="password" placeholder={editId ? "Leave blank to keep current" : ""} value={forms.teacherPassword} onChange={(e) => setForms({ ...forms, teacherPassword: e.target.value })} />
-        </Field>
-        {editId && (
-          <Field label="Status">
-            <Select value={forms.teacherIsActive ? 'active' : 'inactive'} onValueChange={(val) => setForms({ ...forms, teacherIsActive: val === 'active' })}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
-        )}
-      </div>
-    </ActionDialog>
-  )
-}
-
-function CreateStudentDialog({ editId, forms, setForms, selected, setSelected, classes, sections, loading, open, setOpen, onSubmit }) {
-  return (
-    <ActionDialog
-      open={open}
-      setOpen={setOpen}
-      title={editId ? "Edit student" : "Enroll student"}
-      description="Add student identity and class placement."
-      trigger={<Button><Plus /> Enroll student</Button>}
-      footer={<LoadingButton loading={loading} disabled={!selected.studentClassId} onClick={onSubmit}><Save /> {editId ? "Save changes" : "Enroll student"}</LoadingButton>}
-    >
-      <div className="grid gap-3 md:grid-cols-2">
-        <Field label="Student name">
-          <Input value={forms.studentName} onChange={(e) => setForms({ ...forms, studentName: e.target.value })} />
-        </Field>
-        <Field label="Guardian">
-          <Input value={forms.guardianName} onChange={(e) => setForms({ ...forms, guardianName: e.target.value })} />
-        </Field>
-        <Field label="Admission number">
-          <Input value={forms.admissionNo} onChange={(e) => setForms({ ...forms, admissionNo: e.target.value })} />
-        </Field>
-        <Field label="Roll number">
-          <Input value={forms.rollNo} onChange={(e) => setForms({ ...forms, rollNo: e.target.value })} />
-        </Field>
-        <Field label="DOB (AD)">
-          <Input type="date" value={forms.dobAd} onChange={(e) => syncDobFromAd(setForms, forms, e.target.value)} />
-        </Field>
-        <Field label="DOB (BS)">
-          <Input value={forms.dobBs} onChange={(e) => syncDobFromBs(setForms, forms, e.target.value)} placeholder="YYYY-MM-DD" />
-        </Field>
-        <Field label="Class">
-          <Selector label="Select class" items={classes} value={selected.studentClassId} onValueChange={(studentClassId) => setSelected({ ...selected, studentClassId, studentSectionId: undefined })} />
-        </Field>
-        <Field label="Section">
-          <Selector label="Select section" items={sections} value={selected.studentSectionId} onValueChange={(studentSectionId) => setSelected({ ...selected, studentSectionId })} />
-        </Field>
-      </div>
-    </ActionDialog>
-  )
-}
-
-function AssignTeacherDialog({ selected, setSelected, teachers, classes, sections, subjects, loading, open, setOpen, onSubmit }) {
-  return (
-    <ActionDialog
-      open={open}
-      setOpen={setOpen}
-      title="Assign teacher"
-      description="This creates the authorization row checked by marks APIs."
-      trigger={<Button><ShieldCheck /> Assign teacher</Button>}
-      footer={<LoadingButton loading={loading} disabled={!selected.teacherId || !selected.classId || !selected.subjectId} onClick={onSubmit}><ShieldCheck /> Save assignment</LoadingButton>}
-    >
-      <div className="grid gap-3">
-        <Selector label="Teacher" items={teachers} value={selected.teacherId} onValueChange={(teacherId) => setSelected({ ...selected, teacherId })} />
-        <Selector label="Class" items={classes} value={selected.classId} onValueChange={(classId) => setSelected({ ...selected, classId, assignmentSectionId: '' })} />
-        <Field label="Section">
-          <Select value={selected.assignmentSectionId || '__all__'} onValueChange={(value) => setSelected({ ...selected, assignmentSectionId: value === '__all__' ? '' : value })}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select section" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">All sections</SelectItem>
-              {sections.map((section) => (
-                <SelectItem key={section.id} value={section.id}>
-                  {section.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-        <Selector label="Subject" items={subjects} value={selected.subjectId} onValueChange={(subjectId) => setSelected({ ...selected, subjectId })} />
-      </div>
-    </ActionDialog>
-  )
-}
-
-function AttachSubjectDialog({ selected, setSelected, exams, classes, subjects, loading, open, setOpen, onSubmit }) {
-  return (
-    <ActionDialog
-      open={open}
-      setOpen={setOpen}
-      title="Attach subject to exam"
-      description="Marks entry appears only after a class-subject is attached to an exam."
-      trigger={<Button><Send /> Attach subject</Button>}
-      footer={<LoadingButton loading={loading} disabled={!selected.examId || !selected.classId || !selected.subjectId} onClick={onSubmit}><Send /> Attach</LoadingButton>}
-    >
-      <div className="grid gap-3">
-        <Selector label="Exam" items={exams} value={selected.examId} onValueChange={(examId) => setSelected({ ...selected, examId })} />
-        <Selector label="Class" items={classes} value={selected.classId} onValueChange={(classId) => setSelected({ ...selected, classId })} />
-        <Selector label="Subject" items={subjects} value={selected.subjectId} onValueChange={(subjectId) => setSelected({ ...selected, subjectId })} />
-      </div>
-    </ActionDialog>
-  )
-}
-
-function EmptyRows({ label, loading }) {
-  return (
-    <TableRow>
-      <TableCell className="py-10 text-center text-muted-foreground" colSpan={8}>
-        {loading ? <Loader2 className="mx-auto size-5 animate-spin" /> : label}
-      </TableCell>
-    </TableRow>
-  )
-}
-
-function DataOverlay({ loading, hasData }) {
-  if (!loading || !hasData) return null
-  return (
-    <div className="absolute inset-0 z-10 flex items-center justify-center rounded-md bg-background/40 backdrop-blur-[2px] transition-all duration-200">
-      <Loader2 className="size-8 animate-spin text-primary" />
-    </div>
-  )
-}
-
-function ClassTable({ classes, loading, onEdit, onDelete }) {
-  return (
-    <div className="relative">
-      <DataOverlay loading={loading} hasData={classes.length > 0} />
-      <Table>
-        <TableHeader><TableRow><TableHead>Class</TableHead><TableHead>Sections</TableHead><TableHead>Order</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
-        <TableBody>
-          {!classes.length && <EmptyRows loading={loading} label="No classes yet." />}
-          {classes.map((item) => (
-            <TableRow key={item.id}><TableCell className="font-medium">{item.name}</TableCell><TableCell>{item.sections.map((section) => section.name).join(', ') || '-'}</TableCell><TableCell>{item.sortOrder}</TableCell><TableCell><ActionMenu onEdit={() => onEdit(item.id, item)} onDelete={() => onDelete(item.id)} /></TableCell></TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  )
-}
-
-function SubjectTable({ subjects, loading, onEdit, onDelete }) {
-  return (
-    <div className="relative">
-      <DataOverlay loading={loading} hasData={subjects.length > 0} />
-      <Table>
-        <TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Subject</TableHead><TableHead>Credit</TableHead><TableHead>Theory</TableHead><TableHead>Practical</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
-        <TableBody>
-          {!subjects.length && <EmptyRows loading={loading} label="No subjects yet." />}
-          {subjects.map((item) => (
-            <TableRow key={item.id}><TableCell>{item.code}</TableCell><TableCell className="font-medium">{item.name}</TableCell><TableCell>{Number(item.creditHours)}</TableCell><TableCell>{Number(item.theoryFullMarks)}</TableCell><TableCell>{Number(item.practicalFullMarks)}</TableCell><TableCell><ActionMenu onEdit={() => onEdit(item.id, item)} onDelete={() => onDelete(item.id)} /></TableCell></TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  )
-}
-
-function ExamTable({ exams, loading, onEdit, onDelete }) {
-  return (
-    <div className="relative">
-      <DataOverlay loading={loading} hasData={exams.length > 0} />
-      <Table>
-        <TableHeader><TableRow><TableHead>Exam</TableHead><TableHead>Subjects</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
-        <TableBody>
-          {!exams.length && <EmptyRows loading={loading} label="No exams yet." />}
-          {exams.map((item) => (
-            <TableRow key={item.id}><TableCell className="font-medium">{item.name}</TableCell><TableCell>{item.examSubjects?.length ?? 0}</TableCell><TableCell><Badge variant={item.isPublished ? 'default' : 'secondary'}>{item.isPublished ? 'Finalized' : 'Draft'}</Badge></TableCell><TableCell><ActionMenu onEdit={() => onEdit(item.id, item)} onDelete={() => onDelete(item.id)} /></TableCell></TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  )
-}
-
-function TeacherTable({ teachers, loading, onEdit, onDelete }) {
-  return (
-    <div className="relative">
-      <DataOverlay loading={loading} hasData={teachers.length > 0} />
-      <Table>
-        <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Username</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
-        <TableBody>
-          {!teachers.length && <EmptyRows loading={loading} label="No teachers yet." />}
-          {teachers.map((item) => (
-            <TableRow key={item.id}><TableCell className="font-medium">{item.name}</TableCell><TableCell>{item.username}</TableCell><TableCell><Badge variant={item.isActive ? 'default' : 'destructive'}>{item.isActive ? 'Active' : 'Inactive'}</Badge></TableCell><TableCell><ActionMenu onEdit={() => onEdit(item.id, item)} onDelete={() => onDelete(item.id)} /></TableCell></TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  )
-}
-
-function StudentTable({ students, loading, onEdit, onDelete }) {
-  return (
-    <div className="relative">
-      <DataOverlay loading={loading} hasData={students.length > 0} />
-      <Table>
-        <TableHeader><TableRow><TableHead>Roll</TableHead><TableHead>Name</TableHead><TableHead>Class</TableHead><TableHead>Admission</TableHead><TableHead>DOB</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
-        <TableBody>
-          {!students.length && <EmptyRows loading={loading} label="No students yet." />}
-          {students.map((student) => (
-            <TableRow key={student.id}><TableCell>{student.rollNo}</TableCell><TableCell className="font-medium">{student.name}</TableCell><TableCell>{student.class.name}{student.section ? ` / ${student.section.name}` : ''}</TableCell><TableCell>{student.admissionNo}</TableCell><TableCell>{student.dobBs ?? student.dobAd ?? '-'}</TableCell><TableCell><ActionMenu onEdit={() => onEdit(student.id, student)} onDelete={() => onDelete(student.id)} /></TableCell></TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  )
-}
-
-function AssignmentTable({ assignments, loading, onDelete }) {
-  return (
-    <div className="relative">
-      <DataOverlay loading={loading} hasData={assignments.length > 0} />
-      <Table>
-        <TableHeader><TableRow><TableHead>Teacher</TableHead><TableHead>Class</TableHead><TableHead>Section</TableHead><TableHead>Subject</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
-        <TableBody>
-          {!assignments.length && <EmptyRows loading={loading} label="No teacher assignments yet." />}
-          {assignments.map((item) => (
-            <TableRow key={item.id}><TableCell className="font-medium">{item.teacher.name}</TableCell><TableCell>{item.class.name}</TableCell><TableCell>{item.section?.name ?? 'All'}</TableCell><TableCell>{item.subject.name}</TableCell><TableCell><ActionMenu onDelete={() => onDelete(item.id)} /></TableCell></TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  )
-}
-
-function ExamSubjectSummary({ exams, loading, onDelete }) {
-  return (
-    <div className="relative grid gap-3">
-      <DataOverlay loading={loading} hasData={exams.length > 0} />
-      {!exams.length && <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">{loading ? 'Loading...' : 'No exams yet.'}</div>}
-      {exams.map((exam) => (
-        <div key={exam.id} className="rounded-lg border bg-muted/20 p-3">
-          <div className="flex items-center justify-between">
-            <p className="font-medium">{exam.name}</p>
-            <Badge variant={exam.isPublished ? 'default' : 'secondary'}>{exam.isPublished ? 'Finalized' : `${exam.examSubjects?.length ?? 0} rows`}</Badge>
-          </div>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {exam.examSubjects?.map((item) => (
-              <Badge key={item.id} variant="outline" className="flex items-center gap-1 group">
-                {item.class.name} / {item.subject.name}
-                {onDelete && (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <button className="ml-1 rounded-full p-0.5 hover:bg-destructive hover:text-destructive-foreground opacity-50 group-hover:opacity-100 focus:opacity-100 outline-none">
-                        <Trash2 className="size-3" />
-                      </button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Remove subject from exam?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          This will delete any entered marks for this subject in this exam.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={() => onDelete(exam.id, item.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                          Remove
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                )}
-              </Badge>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function GradeRuleEditor({ rules, updateRule }) {
-  return (
-    <Table>
-      <TableHeader><TableRow><TableHead>Grade</TableHead><TableHead>Minimum %</TableHead><TableHead>Maximum %</TableHead><TableHead>GPA</TableHead><TableHead>Remarks</TableHead></TableRow></TableHeader>
-      <TableBody>
-        {rules.map((rule, index) => (
-          <TableRow key={`${rule.label}-${index}`}>
-            <TableCell><Input className="w-20" value={rule.label} onChange={(e) => updateRule(index, 'label', e.target.value)} /></TableCell>
-            <TableCell><Input type="number" value={rule.minPercentage} onChange={(e) => updateRule(index, 'minPercentage', e.target.value)} /></TableCell>
-            <TableCell><Input type="number" value={rule.maxPercentage} onChange={(e) => updateRule(index, 'maxPercentage', e.target.value)} /></TableCell>
-            <TableCell><Input type="number" value={rule.gpa} onChange={(e) => updateRule(index, 'gpa', e.target.value)} /></TableCell>
-            <TableCell><Input value={rule.remarks ?? ''} onChange={(e) => updateRule(index, 'remarks', e.target.value)} /></TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  )
-}
-
-function ReportCardManager({ exams, loading, publishing, onFinalize }) {
-  const [selectedExamId, setSelectedExamId] = useState('')
-  const [payload, setPayload] = useState(null)
-  const [fetching, setFetching] = useState(false)
-
-  useEffect(() => {
-    const nextId = exams[0]?.id ?? ''
-    setSelectedExamId((current) => current || nextId)
-  }, [exams])
-
-  useEffect(() => {
-    if (!selectedExamId) {
-      setPayload(null)
-      return
-    }
-
-    setFetching(true)
-    api(`/admin/exams/${selectedExamId}/report-cards`)
-      .then(setPayload)
-      .catch((error) => toast.error(error.message))
-      .finally(() => setFetching(false))
-  }, [selectedExamId, publishing])
-
-  return (
-    <div className="space-y-5">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <p className="font-medium">Exam report cards</p>
-          <p className="text-sm text-muted-foreground">
-            Finalize the exam once, then print a PDF report card for each student.
-          </p>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Select value={selectedExamId} onValueChange={setSelectedExamId}>
-            <SelectTrigger className="w-full sm:w-72">
-              <SelectValue placeholder="Select exam" />
-            </SelectTrigger>
-            <SelectContent>
-              {exams.map((exam) => (
-                <SelectItem key={exam.id} value={exam.id}>
-                  {exam.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <LoadingButton loading={publishing} disabled={!selectedExamId || payload?.exam?.isPublished} onClick={() => onFinalize(selectedExamId)}>
-            {payload?.exam?.isPublished ? <CheckCircle2 /> : <Upload />}
-            {payload?.exam?.isPublished ? 'Finalized' : 'Finalize exam'}
-          </LoadingButton>
-        </div>
-      </div>
-
-      <div className="relative">
-        <DataOverlay loading={loading} hasData={!!selectedExamId} />
-        <Table>
-          <TableHeader><TableRow><TableHead>Student</TableHead><TableHead>Class</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Print</TableHead></TableRow></TableHeader>
-          <TableBody>
-            {!selectedExamId && <EmptyRows loading={loading} label="No exams available." />}
-            {selectedExamId && !payload?.students?.length && (
-              <EmptyRows loading={loading || fetching} label={fetching ? "Loading report cards..." : "No student report cards for this exam yet."} />
-            )}
-            {payload?.students?.map((student) => (
-              <TableRow key={student.id}>
-                <TableCell>
-                  <div className="font-medium">{student.name}</div>
-                  <div className="text-xs text-muted-foreground">{student.admissionNo} / Roll {student.rollNo}</div>
-                </TableCell>
-                <TableCell>{student.className}{student.sectionName ? ` / ${student.sectionName}` : ''}</TableCell>
-                <TableCell>
-                  <Badge variant={payload.exam.isPublished ? 'default' : 'secondary'}>
-                    {payload.exam.isPublished ? 'Printable' : 'Pending finalization'}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  <Button asChild variant="outline" disabled={!payload.exam.isPublished || !student.hasResults}>
-                    <a href={`${apiBase}/admin/exams/${payload.exam.id}/report-cards/${student.id}.pdf`} target="_blank" rel="noreferrer">
-                      Print PDF
-                    </a>
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
     </div>
   )
 }

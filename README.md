@@ -88,4 +88,4 @@ GradeX is a state-of-the-art, multi-tenant academic platform designed to streaml
     ```
 
 ---
-Built with ❤️ for better academic management.
+Built with ❤️ by Jsbyte for better academic management.

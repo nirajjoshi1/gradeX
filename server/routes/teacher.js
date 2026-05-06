@@ -16,40 +16,149 @@ const markValue = z.coerce.number().min(0).nullable().optional()
 
 router.use(requireAuth, requireRole('TEACHER'))
 
+// --- NEW CLASS TEACHER FEATURE ---
+
+router.get(
+  '/managed-sections',
+  asyncHandler(async (req, res) => {
+    const sections = await prisma.section.findMany({
+      where: { schoolId: req.user.schoolId, classTeacherId: req.user.id },
+      include: { class: true },
+    })
+    res.json(sections)
+  }),
+)
+
+router.get(
+  '/managed-sections/:id/assignments',
+  asyncHandler(async (req, res) => {
+    const section = await prisma.section.findFirst({
+      where: { id: req.params.id, schoolId: req.user.schoolId, classTeacherId: req.user.id },
+    })
+    if (!section) throw new HttpError(403, 'You are not the class teacher for this section')
+
+    const assignments = await prisma.teacherAssignment.findMany({
+      where: { schoolId: req.user.schoolId, classId: section.classId, sectionId: section.id },
+      include: { teacher: true, subject: true },
+      orderBy: { subject: { name: 'asc' } },
+    })
+    res.json(assignments)
+  }),
+)
+
+router.post(
+  '/managed-sections/:id/assignments',
+  validate(
+    z.object({
+      teacherId: z.string().min(1),
+      subjectId: z.string().min(1),
+    }),
+  ),
+  asyncHandler(async (req, res) => {
+    const section = await prisma.section.findFirst({
+      where: { id: req.params.id, schoolId: req.user.schoolId, classTeacherId: req.user.id },
+    })
+    if (!section) throw new HttpError(403, 'You are not the class teacher for this section')
+
+    const assignment = await prisma.teacherAssignment.create({
+      data: {
+        schoolId: req.user.schoolId,
+        teacherId: req.body.teacherId,
+        classId: section.classId,
+        sectionId: section.id,
+        subjectId: req.body.subjectId,
+      },
+      include: { teacher: true, subject: true },
+    })
+    res.status(201).json(assignment)
+  }),
+)
+
+router.delete(
+  '/managed-sections/:id/assignments/:assignmentId',
+  asyncHandler(async (req, res) => {
+    const section = await prisma.section.findFirst({
+      where: { id: req.params.id, schoolId: req.user.schoolId, classTeacherId: req.user.id },
+    })
+    if (!section) throw new HttpError(403, 'You are not the class teacher for this section')
+
+    await prisma.teacherAssignment.delete({
+      where: { id: req.params.assignmentId, schoolId: req.user.schoolId, sectionId: section.id },
+    })
+    res.json({ ok: true })
+  }),
+)
+
+// Helper to fetch teachers and subjects for assignment
+router.get(
+  '/resources',
+  asyncHandler(async (req, res) => {
+    const [teachers, subjects] = await Promise.all([
+      prisma.user.findMany({
+        where: { schoolId: req.user.schoolId, role: 'TEACHER' },
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.subject.findMany({
+        where: { schoolId: req.user.schoolId },
+        select: { id: true, name: true, code: true },
+        orderBy: { name: 'asc' },
+      }),
+    ])
+    res.json({ teachers, subjects })
+  }),
+)
+
+// --- END CLASS TEACHER FEATURE ---
+
 // GET /teacher/stats — dashboard overview counters
 router.get(
   '/stats',
   asyncHandler(async (req, res) => {
-    const assignments = await prisma.teacherAssignment.findMany({
-      where: { schoolId: req.user.schoolId, teacherId: req.user.id },
-      select: { classId: true, sectionId: true, subjectId: true },
-    })
+    const [assignments, managedSections] = await Promise.all([
+      prisma.teacherAssignment.findMany({
+        where: { schoolId: req.user.schoolId, teacherId: req.user.id },
+        select: { classId: true, sectionId: true, subjectId: true },
+      }),
+      prisma.section.findMany({
+        where: { schoolId: req.user.schoolId, classTeacherId: req.user.id },
+        select: { classId: true, id: true },
+      }),
+    ])
 
-    if (!assignments.length) {
+    if (assignments.length === 0 && managedSections.length === 0) {
       return res.json({ students: 0, subjects: 0, classes: 0, pendingMarks: 0, lockedMarks: 0 })
     }
 
-    const uniqueClassIds = [...new Set(assignments.map((a) => a.classId))]
-    const uniqueSubjectIds = [...new Set(assignments.map((a) => a.subjectId))]
+    const uniqueClassIds = new Set([...assignments.map((a) => a.classId), ...managedSections.map((s) => s.classId)])
+    const uniqueSubjectIds = new Set(assignments.map((a) => a.subjectId))
 
-    const studentWhere = {
-      schoolId: req.user.schoolId,
-      OR: assignments.map((a) => ({
+    const accessConditions = [
+      ...assignments.map((a) => ({
         classId: a.classId,
         ...(a.sectionId ? { sectionId: a.sectionId } : {}),
       })),
-    }
+      ...managedSections.map((s) => ({
+        classId: s.classId,
+        sectionId: s.id,
+      })),
+    ]
 
     const [studentCount, pendingMarks, lockedMarks] = await Promise.all([
-      prisma.student.count({ where: studentWhere }),
+      prisma.student.count({
+        where: {
+          schoolId: req.user.schoolId,
+          OR: accessConditions,
+        },
+      }),
       prisma.mark.count({ where: { schoolId: req.user.schoolId, enteredById: req.user.id, lockedAt: null } }),
       prisma.mark.count({ where: { schoolId: req.user.schoolId, enteredById: req.user.id, lockedAt: { not: null } } }),
     ])
 
     res.json({
       students: studentCount,
-      subjects: uniqueSubjectIds.length,
-      classes: uniqueClassIds.length,
+      subjects: uniqueSubjectIds.size,
+      classes: uniqueClassIds.size,
       pendingMarks,
       lockedMarks,
     })
@@ -60,12 +169,18 @@ router.get(
 router.get(
   '/students',
   asyncHandler(async (req, res) => {
-    const assignments = await prisma.teacherAssignment.findMany({
-      where: { schoolId: req.user.schoolId, teacherId: req.user.id },
-      select: { classId: true, sectionId: true },
-    })
+    const [assignments, managedSections] = await Promise.all([
+      prisma.teacherAssignment.findMany({
+        where: { schoolId: req.user.schoolId, teacherId: req.user.id },
+        select: { classId: true, sectionId: true },
+      }),
+      prisma.section.findMany({
+        where: { schoolId: req.user.schoolId, classTeacherId: req.user.id },
+        select: { classId: true, id: true },
+      }),
+    ])
 
-    if (!assignments.length) return res.json({ items: [], total: 0 })
+    if (assignments.length === 0 && managedSections.length === 0) return res.json({ items: [], total: 0 })
 
     const classId = req.query.classId ? String(req.query.classId) : null
     const sectionId = req.query.sectionId ? String(req.query.sectionId) : null
@@ -73,20 +188,26 @@ router.get(
     const page = Math.max(1, Number(req.query.page ?? 1))
     const pageSize = Math.min(Number(req.query.pageSize ?? 30), 100)
 
-    // Build OR conditions from assignments
-    const assignmentOr = assignments
-      .filter((a) => !classId || a.classId === classId)
-      .filter((a) => !sectionId || !a.sectionId || a.sectionId === sectionId)
-      .map((a) => ({
+    const accessConditions = [
+      ...assignments.map((a) => ({
         classId: a.classId,
         ...(a.sectionId ? { sectionId: a.sectionId } : {}),
-      }))
+      })),
+      ...managedSections.map((s) => ({
+        classId: s.classId,
+        sectionId: s.id,
+      })),
+    ].filter((cond) => {
+      if (classId && cond.classId !== classId) return false
+      if (sectionId && cond.sectionId && cond.sectionId !== sectionId) return false
+      return true
+    })
 
-    if (!assignmentOr.length) return res.json({ items: [], total: 0 })
+    if (!accessConditions.length) return res.json({ items: [], total: 0 })
 
     const where = {
       schoolId: req.user.schoolId,
-      OR: assignmentOr,
+      OR: accessConditions,
       ...(search
         ? {
             OR: [
@@ -128,36 +249,60 @@ router.get(
 router.get(
   '/exams',
   asyncHandler(async (req, res) => {
-    const assignments = await prisma.teacherAssignment.findMany({
-      where: { schoolId: req.user.schoolId, teacherId: req.user.id },
-      include: { class: true, section: true, subject: true },
-    })
+    const [assignments, managedSections] = await Promise.all([
+      prisma.teacherAssignment.findMany({
+        where: { schoolId: req.user.schoolId, teacherId: req.user.id },
+        include: { class: true, section: true, subject: true },
+      }),
+      prisma.section.findMany({
+        where: { schoolId: req.user.schoolId, classTeacherId: req.user.id },
+        include: { class: true },
+      }),
+    ])
 
     const examSubjects = await prisma.examSubject.findMany({
-      where: {
-        schoolId: req.user.schoolId,
-        OR: assignments.map((assignment) => ({
-          classId: assignment.classId,
-          subjectId: assignment.subjectId,
-        })),
-      },
+      where: { schoolId: req.user.schoolId },
       include: { exam: true, class: true, subject: true },
       orderBy: { createdAt: 'desc' },
     })
 
-    res.json(
-      assignments.flatMap((assignment) =>
-        examSubjects
-          .filter((examSubject) => examSubject.classId === assignment.classId && examSubject.subjectId === assignment.subjectId)
-          .map((examSubject) => ({
-            ...examSubject,
-            id: `${examSubject.id}:${assignment.sectionId ?? 'all'}`,
-            examSubjectId: examSubject.id,
-            section: assignment.section,
+    const accessible = []
+
+    // 1. Add direct subject assignments
+    assignments.forEach((assignment) => {
+      examSubjects
+        .filter((es) => es.classId === assignment.classId && es.subjectId === assignment.subjectId)
+        .forEach((es) => {
+          accessible.push({
+            ...es,
+            id: `${es.id}:${assignment.sectionId ?? 'all'}`,
+            examSubjectId: es.id,
             sectionId: assignment.sectionId,
-          })),
-      ),
-    )
+            section: assignment.section,
+          })
+        })
+    })
+
+    // 2. Add managed section oversight (Class Teacher gets ALL subjects in their section)
+    managedSections.forEach((ms) => {
+      examSubjects
+        .filter((es) => es.classId === ms.classId)
+        .forEach((es) => {
+          // Only add if not already present as a direct assignment (to avoid duplicates)
+          const exists = accessible.some((acc) => acc.examSubjectId === es.id && acc.sectionId === ms.id)
+          if (!exists) {
+            accessible.push({
+              ...es,
+              id: `${es.id}:${ms.id}`,
+              examSubjectId: es.id,
+              sectionId: ms.id,
+              section: ms,
+            })
+          }
+        })
+    })
+
+    res.json(accessible)
   }),
 )
 
@@ -189,7 +334,7 @@ router.get(
     const [students, total, marks] = await Promise.all([
       prisma.student.findMany({
         where: { schoolId: req.user.schoolId, classId, ...(sectionId ? { sectionId } : {}) },
-        include: { section: true },
+        include: { class: true, section: true },
         skip: (page - 1) * pageSize,
         take: pageSize,
         orderBy: [{ section: { name: 'asc' } }, { rollNo: 'asc' }],

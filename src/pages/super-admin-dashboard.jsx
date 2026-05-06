@@ -32,6 +32,8 @@ function SchoolManagement() {
   const [schools, setSchools] = useState([])
   const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
+  const [successOpen, setSuccessOpen] = useState(false)
+  const [createdInfo, setCreatedInfo] = useState(null)
 
   const [forms, setForms] = useState({
     name: '',
@@ -59,12 +61,13 @@ function SchoolManagement() {
   async function handleCreate(e) {
     e.preventDefault()
     try {
-      await api('/super-admin/schools', {
+      const data = await api('/super-admin/schools', {
         method: 'POST',
         body: JSON.stringify(forms),
       })
-      toast.success('School and Admin account created successfully')
+      setCreatedInfo(data)
       setCreateOpen(false)
+      setSuccessOpen(true)
       setForms({ name: '', address: '', adminUsername: '', adminEmail: '', adminPassword: '' })
       await load()
     } catch (error) {
@@ -80,6 +83,11 @@ function SchoolManagement() {
     } catch (error) {
       toast.error(error.message)
     }
+  }
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text)
+    toast.success('Link copied to clipboard')
   }
 
   return (
@@ -122,6 +130,11 @@ function SchoolManagement() {
                       <Building2 className="size-4 text-primary" /> {school.name}
                     </div>
                     {school.address && <div className="text-xs text-muted-foreground mt-0.5">{school.address}</div>}
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded uppercase tracking-tighter">
+                        /{school.slug}
+                      </span>
+                    </div>
                   </TableCell>
                   <TableCell>
                     {school.users?.[0] ? (
@@ -139,27 +152,36 @@ function SchoolManagement() {
                     {new Date(school.createdAt).toLocaleDateString()}
                   </TableCell>
                   <TableCell className="text-right">
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="icon" disabled={school.id === 'seed-school'}>
-                          <Trash2 className="size-4 text-destructive" />
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Delete {school.name}?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            This action cannot be undone. This will permanently delete the school, all its staff, students, and exam records.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => handleDelete(school.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                            Delete Permanently
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                    <div className="flex items-center justify-end gap-2">
+                      <Button 
+                        variant="ghost" 
+                        size="icon"
+                        onClick={() => copyToClipboard(`${window.location.origin}/${school.slug}/login`)}
+                      >
+                        <Copy className="size-4 text-muted-foreground" />
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" disabled={school.id === 'seed-school'}>
+                            <Trash2 className="size-4 text-destructive" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete {school.name}?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This action cannot be undone. This will permanently delete the school, all its staff, students, and exam records.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handleDelete(school.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                              Delete Permanently
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -240,6 +262,61 @@ function SchoolManagement() {
               <Button type="submit">Create School</Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Success Dialog */}
+      <Dialog open={successOpen} onOpenChange={setSuccessOpen}>
+        <DialogContent className="sm:max-w-[425px] text-center">
+          <div className="flex justify-center mb-4">
+            <div className="size-16 rounded-full bg-emerald-500/10 flex items-center justify-center">
+              <CheckCircle2 className="size-10 text-emerald-500" />
+            </div>
+          </div>
+          <DialogHeader>
+            <DialogTitle className="text-center text-xl">School Registered Successfully!</DialogTitle>
+            <DialogDescription className="text-center">
+              {createdInfo?.school?.name} is ready. Share the login URL below with the principal.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="mt-6 space-y-4">
+            <div className="space-y-2">
+              <Label className="text-xs uppercase text-muted-foreground font-bold tracking-widest">School Login URL</Label>
+              <div className="flex gap-2">
+                <Input 
+                  readOnly 
+                  value={`${window.location.origin}/${createdInfo?.school?.slug}/login`}
+                  className="bg-muted font-mono text-sm"
+                />
+                <Button 
+                  size="icon" 
+                  variant="outline"
+                  onClick={() => copyToClipboard(`${window.location.origin}/${createdInfo?.school?.slug}/login`)}
+                >
+                  <Copy className="size-4" />
+                </Button>
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-amber-500/5 border border-amber-500/20 p-4 text-left">
+              <h5 className="text-sm font-semibold text-amber-600 mb-1">Important</h5>
+              <p className="text-xs text-amber-700 leading-relaxed">
+                Provide the username <strong>{createdInfo?.admin?.username}</strong> and the password you just set to the principal so they can log in and begin setup.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="flex flex-col sm:flex-row gap-2 mt-6">
+            <Button 
+              variant="outline" 
+              className="w-full sm:w-auto px-8" 
+              onClick={() => window.open(`${window.location.origin}/${createdInfo?.school?.slug}/login`, '_blank')}
+            >
+              Visit Portal
+            </Button>
+            <Button className="w-full sm:w-auto px-8" onClick={() => setSuccessOpen(false)}>Done</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

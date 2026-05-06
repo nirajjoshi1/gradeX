@@ -22,7 +22,8 @@ enum ResultStatus {
 
 model School {
   id        String   @id @default(cuid())
-  name        String
+  slug      String   @unique
+  name      String
   address     String?
   logoUrl     String?
   signatureUrl String?
@@ -54,6 +55,7 @@ model User {
 
   school             School?             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   teacherAssignments TeacherAssignment[] @relation("TeacherAssignments")
+  classTeacherSections Section[]          @relation("ClassTeacher")
   studentProfile     Student?
 
   @@index([schoolId, role])
@@ -63,7 +65,7 @@ model Class {
   id        String   @id @default(cuid())
   schoolId  String
   name      String
-  sortOrder Int      @default(0)
+  sortOrder Int      @default(1)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -72,6 +74,7 @@ model Class {
   teacherAssignments TeacherAssignment[]
   examSubjects       ExamSubject[]
   students           Student[]
+  subjects           Subject[]
 
   @@unique([schoolId, name])
   @@index([schoolId, sortOrder])
@@ -84,6 +87,9 @@ model Section {
   name      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  classTeacherId     String?
+  classTeacher       User?               @relation("ClassTeacher", fields: [classTeacherId], references: [id], onDelete: SetNull)
 
   class              Class               @relation(fields: [classId], references: [id], onDelete: Cascade)
   students           Student[]
@@ -110,6 +116,7 @@ model Subject {
   examSubjects       ExamSubject[]
   marks              Mark[]
   results            Result[]
+  classes            Class[]
 
   @@unique([schoolId, code])
   @@index([schoolId, name])

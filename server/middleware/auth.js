@@ -76,6 +76,15 @@ export async function assertTeacherAssignment({ user, classId, subjectId, sectio
     throw new HttpError(403, 'Teacher access required')
   }
 
+  // 1. Check if they are the class teacher for this section
+  // Class teachers have oversight of all subjects in their section
+  if (sectionId) {
+    const isClassTeacher = await prisma.section.findFirst({
+      where: { id: sectionId, schoolId: user.schoolId, classTeacherId: user.id },
+    })
+    if (isClassTeacher) return true
+  }
+
   const assignment = await prisma.teacherAssignment.findFirst({
     where: {
       schoolId: user.schoolId,

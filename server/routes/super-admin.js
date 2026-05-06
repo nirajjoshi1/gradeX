@@ -42,31 +42,50 @@ router.post(
     }),
   ),
   asyncHandler(async (req, res) => {
-    const existingUser = await prisma.user.findUnique({
-      where: { username: req.body.adminUsername },
+    const { name, address, adminUsername, adminEmail, adminPassword } = req.body
+    const slug = name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+
+    // Checks for existing username/email
+    const existing = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { username: adminUsername.toLowerCase() },
+          ...(adminEmail ? [{ email: adminEmail.toLowerCase() }] : [])
+        ]
+      }
     })
 
-    if (existingUser) {
-      throw new HttpError(400, 'Username is already taken by another user')
+    if (existing) {
+      if (existing.username === adminUsername.toLowerCase()) {
+        throw new HttpError(400, 'Username is already taken')
+      }
+      throw new HttpError(400, 'Email address is already in use')
     }
 
-    const passwordHash = await bcrypt.hash(req.body.adminPassword, 12)
+    // Check for existing slug
+    const existingSchool = await prisma.school.findUnique({ where: { slug } })
+    if (existingSchool) {
+      throw new HttpError(400, 'A school with a similar name already exists; please use a more unique name')
+    }
+
+    const passwordHash = await bcrypt.hash(adminPassword, 12)
 
     // Run in a transaction to ensure both school and admin are created together
-    const school = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const newSchool = await tx.school.create({
         data: {
-          name: req.body.name,
-          address: req.body.address,
+          name,
+          slug,
+          address,
         },
       })
 
-      await tx.user.create({
+      const newAdmin = await tx.user.create({
         data: {
           schoolId: newSchool.id,
           name: 'Principal Admin',
-          username: req.body.adminUsername,
-          email: req.body.adminEmail || null,
+          username: adminUsername.toLowerCase(),
+          email: adminEmail ? adminEmail.toLowerCase() : null,
           passwordHash,
           role: 'ADMIN',
         },
@@ -93,7 +112,7 @@ router.post(
       return { school: newSchool, admin: newAdmin }
     })
 
-    res.status(201).json({ school, admin })
+    res.status(201).json(result)
   }),
 )
 

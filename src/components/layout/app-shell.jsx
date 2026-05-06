@@ -1,61 +1,56 @@
-import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   BookOpen,
   BookOpenCheck,
   CalendarDays,
+  ClipboardList,
   GraduationCap,
-  Layers3,
+  LayoutDashboard,
   LogOut,
+  Layers3,
+  Moon,
   PanelLeft,
   Save,
   Send,
-  ShieldCheck,
-  Users,
-  LayoutDashboard,
-  ClipboardList,
-  UserCircle,
   Settings,
+  ShieldCheck,
   Sun,
-  Moon
+  UserCircle,
+  Users,
 } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useTheme } from 'next-themes'
 
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/stores/auth-store'
 import { cn } from '@/lib/utils'
-import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet'
-import { DialogTitle } from '@/components/ui/dialog' // For accessibility
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
+import { DialogTitle } from '@/components/ui/dialog'
 
-const navByRole = {
-  SUPER_ADMIN: [{ to: '/super-admin', label: 'Dashboard', icon: ShieldCheck }],
-  ADMIN: [{ to: '/admin', label: 'Dashboard', icon: ShieldCheck }],
-  TEACHER: [{ to: '/teacher', label: 'Dashboard', icon: LayoutDashboard }],
-}
+/* ─── Navigation config ─────────────────────────────────────────────────── */
 
 const adminSidebarSections = [
   {
-    label: 'School setup',
+    label: 'School Setup',
     items: [
-      { view: 'classes', label: 'Class management', icon: Layers3 },
-      { view: 'subjects', label: 'Subject management', icon: BookOpen },
-      { view: 'students', label: 'Student register', icon: GraduationCap },
+      { view: 'classes',  label: 'Classes',         icon: Layers3 },
+      { view: 'subjects', label: 'Subjects',         icon: BookOpen },
+      { view: 'students', label: 'Students',         icon: GraduationCap },
     ],
   },
   {
-    label: 'Staff operations',
+    label: 'Staff',
     items: [
-      { view: 'teachers', label: 'Teacher management', icon: Users },
-      { view: 'assignments', label: 'Assignments', icon: ShieldCheck },
+      { view: 'teachers',    label: 'Teachers',     icon: Users },
     ],
   },
   {
-    label: 'Assessment system',
+    label: 'Assessments',
     items: [
-      { view: 'exams', label: 'Exam management', icon: CalendarDays },
-      { view: 'grading', label: 'Grading rules', icon: Save },
-      { view: 'publish', label: 'Report cards', icon: Send },
+      { view: 'exams',   label: 'Exams',          icon: CalendarDays },
+      { view: 'grading', label: 'Grading Rules',  icon: Save },
+      { view: 'ledger',  label: 'Result Ledger',  icon: ClipboardList },
+      { view: 'publish', label: 'Report Cards',   icon: Send },
     ],
   },
 ]
@@ -64,10 +59,9 @@ const teacherSidebarSections = [
   {
     label: 'My Workspace',
     items: [
-      { view: 'dashboard', label: 'Overview', icon: LayoutDashboard },
-      { view: 'students', label: 'My Students', icon: GraduationCap },
-      { view: 'marks', label: 'Enter Marks', icon: BookOpenCheck },
-      { view: 'assignments', label: 'My Assignments', icon: ClipboardList },
+      { view: 'dashboard',   label: 'Overview',        icon: LayoutDashboard },
+      { view: 'students',    label: 'My Students',     icon: GraduationCap },
+      { view: 'marks',       icon: BookOpenCheck,      label: 'Enter Marks' },
     ],
   },
   {
@@ -80,183 +74,256 @@ const teacherSidebarSections = [
 
 const superAdminSidebarSections = [
   {
-    label: 'Platform Administration',
+    label: 'Platform',
     items: [
       { view: 'schools', label: 'School Directory', icon: LayoutDashboard },
     ],
   },
 ]
 
+/* Mobile bottom nav items per role */
+const adminBottomNav = [
+  { view: 'dashboard',   icon: LayoutDashboard, label: 'Home'     },
+  { view: 'classes',     icon: Layers3,          label: 'Classes'  },
+  { view: 'students',    icon: GraduationCap,    label: 'Students' },
+  { view: 'exams',       icon: CalendarDays,     label: 'Exams'    },
+  { view: 'publish',     icon: Send,             label: 'Reports'  },
+]
+
+const teacherBottomNav = [
+  { view: 'dashboard',   icon: LayoutDashboard, label: 'Home'    },
+  { view: 'students',    icon: GraduationCap,   label: 'Students'},
+  { view: 'marks',       icon: BookOpenCheck,   label: 'Marks'   },
+  { view: 'profile',     icon: UserCircle,      label: 'Profile' },
+]
+
 const roleTone = {
-  SUPER_ADMIN: 'System access',
-  ADMIN: 'Principal access',
-  TEACHER: 'Teacher access',
+  SUPER_ADMIN: 'Platform admin',
+  ADMIN: 'Principal',
+  TEACHER: 'Teacher',
 }
+
+/* ─── Component ─────────────────────────────────────────────────────────── */
 
 export function AppShell() {
   const navigate = useNavigate()
   const location = useLocation()
   const { user, logout } = useAuthStore()
-  const nav = navByRole[user?.role] ?? []
-  const activeView = new URLSearchParams(location.search).get('view') ?? 'dashboard'
-  const [drawerOpen, setDrawerOpen] = useState(false)
   const { theme, setTheme } = useTheme()
   const isDark = theme === 'dark'
+  const [drawerOpen, setDrawerOpen] = useState(false)
 
-  const sidebarSections = 
-    user?.role === 'SUPER_ADMIN' ? superAdminSidebarSections :
-    user?.role === 'ADMIN' ? adminSidebarSections : teacherSidebarSections
+  const { schoolSlug } = useParams()
+  const activeView = new URLSearchParams(location.search).get('view') ?? 'dashboard'
+  
+  const slug = user?.school?.slug || schoolSlug || 'demo'
+  const basePath = user?.role === 'ADMIN' ? `/${slug}/admin` : user?.role === 'SUPER_ADMIN' ? '/super-admin' : `/${slug}/teacher`
+
+  const sidebarSections =
+    user?.role === 'SUPER_ADMIN' ? superAdminSidebarSections
+    : user?.role === 'ADMIN'     ? adminSidebarSections
+    : teacherSidebarSections
+
+  const bottomNavItems =
+    user?.role === 'ADMIN' ? adminBottomNav
+    : user?.role === 'TEACHER' ? teacherBottomNav
+    : []
 
   async function onLogout() {
     await logout()
-    navigate('/login')
+    navigate(`/${slug}/login`)
   }
 
-  const SidebarContent = () => (
-    <>
-      <div className="flex items-center justify-between border-b border-sidebar-border px-4 py-4">
-        <Link to="/" className="flex items-center gap-2.5 overflow-hidden" onClick={() => setDrawerOpen(false)}>
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground overflow-hidden">
-            {user?.school?.logoUrl ? (
-              <img src={user.school.logoUrl} alt="Logo" className="h-full w-full object-cover" />
-            ) : (
-              <GraduationCap className="size-5" />
-            )}
-          </span>
-          <div className="flex flex-col gap-0.5 leading-none overflow-hidden">
-            <span className="font-semibold truncate">{user?.school?.name ?? 'GradeX'}</span>
-            <span className="text-[11px] text-muted-foreground line-clamp-1">
-              {user?.role === 'SUPER_ADMIN' ? 'Platform management' : 'School automation'}
-            </span>
-          </div>
-        </Link>
-        {user?.role === 'ADMIN' && (
+  /* ── Sidebar inner content (shared desktop/mobile) ─────────────────── */
+  function SidebarContent() {
+    return (
+      <div className="flex flex-col h-full">
+        {/* Brand header */}
+        <div className="flex items-center justify-between gap-3 px-4 py-4 border-b border-sidebar-border/60">
           <Link
-            to="/admin?view=settings"
-            className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            title="School Profile"
+            to="/"
+            className="flex min-w-0 items-center gap-3"
+            onClick={() => setDrawerOpen(false)}
           >
-            <Settings className="size-4" />
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[linear-gradient(135deg,oklch(0.52_0.19_262),oklch(0.62_0.21_250))] shadow-md shadow-primary/30 overflow-hidden border border-white/10">
+              {user?.school?.logoUrl ? (
+                <img src={user.school.logoUrl} alt="Logo" className="h-full w-full object-cover" />
+              ) : (
+                <GraduationCap className="size-5 text-white" />
+              )}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold text-sidebar-foreground leading-none">
+                {user?.school?.name || 'GradeX'}
+              </p>
+              <p className="mt-0.5 truncate text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                {user?.role === 'SUPER_ADMIN' ? 'Platform management' : user?.school?.address || 'Educational Excellence'}
+              </p>
+            </div>
           </Link>
-        )}
-      </div>
 
-      <nav className="flex-1 space-y-4 overflow-y-auto px-3 pt-3 pb-4">
-        <div className="space-y-3 pt-1">
+          {user?.role === 'ADMIN' && (
+            <Link
+              to="/admin?view=settings"
+              onClick={() => setDrawerOpen(false)}
+              className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+              title="Settings"
+            >
+              <Settings className="size-4" />
+            </Link>
+          )}
+        </div>
+
+        {/* Nav */}
+        <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
           {sidebarSections.map((section) => (
-            <div key={section.label} className="rounded-xl bg-sidebar-accent/20 p-2">
-              <p className="px-2 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/55">
+            <div key={section.label}>
+              <p className="mb-1.5 px-2.5 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground/50">
                 {section.label}
               </p>
-              <div className="space-y-1">
+              <div className="space-y-0.5">
                 {section.items.map((item) => {
                   const isActive = activeView === item.view
-
                   return (
                     <Link
                       key={item.view}
-                      to={`/${user?.role === 'ADMIN' ? 'admin' : 'teacher'}?view=${item.view}`}
+                      to={`${basePath}?view=${item.view}`}
                       onClick={() => setDrawerOpen(false)}
                       className={cn(
-                        'flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all',
-                        'text-sidebar-foreground/72 hover:-translate-y-0.5 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-                        isActive && 'bg-sidebar-primary text-sidebar-primary-foreground shadow-sm',
+                        'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all',
+                        isActive
+                          ? 'bg-[linear-gradient(135deg,oklch(0.52_0.19_262),oklch(0.62_0.21_250))] text-white shadow-sm shadow-primary/25'
+                          : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:translate-x-0.5',
                       )}
                     >
-                      <item.icon className="size-4" />
+                      <item.icon className={cn('size-4 shrink-0', !isActive && 'text-muted-foreground group-hover:text-sidebar-accent-foreground')} />
                       <span className="truncate">{item.label}</span>
+                      {isActive && (
+                        <span className="ml-auto size-1.5 rounded-full bg-white/70" />
+                      )}
                     </Link>
                   )
                 })}
               </div>
             </div>
           ))}
-        </div>
-      </nav>
+        </nav>
 
-    </>
-  )
+
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col md:flex-row">
-      {/* Desktop Sidebar */}
-      <aside className="fixed inset-y-0 left-0 hidden w-72 border-r bg-sidebar text-sidebar-foreground shadow-sm md:flex md:flex-col z-30">
+    <div className="min-h-screen bg-background text-foreground flex">
+
+      {/* ── Desktop Sidebar ─────────────────────────────────────────── */}
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-sidebar-border/60 bg-sidebar shadow-sm md:flex md:flex-col">
         <SidebarContent />
       </aside>
 
-      <div className="flex-1 md:pl-72 flex flex-col min-h-screen">
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b bg-background/80 px-4 backdrop-blur md:px-7">
+      {/* ── Main content area ────────────────────────────────────────── */}
+      <div className="flex min-h-screen w-full flex-col md:pl-64">
+
+        {/* Header */}
+        <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-border/60 bg-background/85 px-4 backdrop-blur-md md:px-6">
           <div className="flex items-center gap-3">
+            {/* Mobile drawer trigger */}
             <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
               <SheetTrigger asChild>
-                <Button variant="outline" size="icon" className="md:hidden">
-                  <PanelLeft />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-9 rounded-xl md:hidden text-muted-foreground hover:bg-muted"
+                >
+                  <PanelLeft className="size-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-72 p-0 bg-sidebar text-sidebar-foreground flex flex-col">
-                <DialogTitle className="sr-only">Navigation Menu</DialogTitle>
+              <SheetContent side="left" className="w-64 p-0 bg-sidebar border-r border-sidebar-border/60">
+                <DialogTitle className="sr-only">Navigation</DialogTitle>
                 <SidebarContent />
               </SheetContent>
             </Sheet>
-            <div>
-              <p className="text-sm font-semibold md:text-base">{user?.name}</p>
-              <p className="text-xs text-muted-foreground">{roleTone[user?.role]}</p>
+
+            {/* User info */}
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold leading-tight max-w-[140px] sm:max-w-xs">
+                {user?.name}
+              </p>
+              <p className="text-[11px] text-muted-foreground">{roleTone[user?.role]}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Header right */}
+          <div className="flex items-center gap-1.5">
             <Button
               variant="ghost"
               size="icon"
-              className="text-muted-foreground"
+              className="size-9 rounded-xl text-muted-foreground"
               onClick={() => setTheme(isDark ? 'light' : 'dark')}
-              title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
             >
-              {isDark ? <Sun className="size-5" /> : <Moon className="size-5" />}
+              {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
             </Button>
-            <Badge variant="secondary" className="hidden sm:inline-flex">Live school workspace</Badge>
-            <Button variant="outline" size="sm" onClick={onLogout} className="hidden sm:flex">
-              <LogOut className="mr-2 size-4" />
+
+
+
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onLogout}
+              className="size-9 rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive md:hidden"
+            >
+              <LogOut className="size-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onLogout}
+              className="hidden md:flex rounded-xl h-9 px-3 gap-1.5 text-muted-foreground hover:text-destructive hover:border-destructive/40 hover:bg-destructive/5"
+            >
+              <LogOut className="size-3.5" />
               Sign out
-            </Button>
-            <Button variant="ghost" size="icon" onClick={onLogout} className="sm:hidden text-muted-foreground">
-              <LogOut className="size-5" />
             </Button>
           </div>
         </header>
 
-        <main className="flex-1 mx-auto w-full max-w-screen-2xl p-4 md:p-7 pb-24 md:pb-7">
+        {/* Page content */}
+        <main className="flex-1 mx-auto w-full max-w-screen-2xl p-3 sm:p-5 md:p-7 pb-24 md:pb-8">
           <Outlet />
         </main>
       </div>
 
-      {/* Mobile Bottom Navigation (Teacher only for now to not disrupt admin) */}
-      {user?.role === 'TEACHER' && (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 border-t bg-background/95 backdrop-blur z-40 pb-safe">
-          <div className="flex items-center justify-around px-2 py-2">
-            {[
-              { view: 'dashboard', icon: LayoutDashboard, label: 'Home' },
-              { view: 'students', icon: GraduationCap, label: 'Students' },
-              { view: 'marks', icon: BookOpenCheck, label: 'Marks' },
-              { view: 'profile', icon: UserCircle, label: 'Profile' },
-            ].map((item) => {
+      {/* ── Mobile Bottom Navigation ─────────────────────────────────── */}
+      {bottomNavItems.length > 0 && (
+        <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 border-t border-border/60 bg-background/95 backdrop-blur-md">
+          <div className="flex items-stretch justify-around px-1 py-1 safe-area-inset-bottom">
+            {bottomNavItems.map((item) => {
               const isActive = activeView === item.view
               return (
                 <Link
                   key={item.view}
-                  to={`/teacher?view=${item.view}`}
+                  to={`${basePath}?view=${item.view}`}
                   className={cn(
-                    "flex flex-col items-center justify-center p-2 rounded-lg min-w-[64px] transition-colors",
-                    isActive ? "text-primary" : "text-muted-foreground hover:bg-muted"
+                    'flex flex-1 flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl transition-all',
+                    isActive
+                      ? 'text-primary'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/60',
                   )}
                 >
-                  <item.icon className={cn("size-5 mb-1", isActive && "fill-primary/20")} />
-                  <span className="text-[10px] font-medium">{item.label}</span>
+                  <div className={cn(
+                    'flex items-center justify-center size-8 rounded-xl transition-all',
+                    isActive && 'bg-primary/12',
+                  )}>
+                    <item.icon className={cn('size-5', isActive && 'stroke-[2.2]')} />
+                  </div>
+                  <span className={cn('text-[9.5px] font-semibold tracking-wide', isActive && 'text-primary')}>
+                    {item.label}
+                  </span>
                 </Link>
               )
             })}
           </div>
-        </div>
+        </nav>
       )}
     </div>
   )
