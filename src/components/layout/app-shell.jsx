@@ -13,9 +13,13 @@ import {
   Users,
   LayoutDashboard,
   ClipboardList,
-  UserCircle
+  UserCircle,
+  Settings,
+  Sun,
+  Moon
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useTheme } from 'next-themes'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -96,6 +100,8 @@ export function AppShell() {
   const nav = navByRole[user?.role] ?? []
   const activeView = new URLSearchParams(location.search).get('view') ?? 'dashboard'
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const { theme, setTheme } = useTheme()
+  const isDark = theme === 'dark'
 
   const sidebarSections = 
     user?.role === 'SUPER_ADMIN' ? superAdminSidebarSections :
@@ -108,18 +114,31 @@ export function AppShell() {
 
   const SidebarContent = () => (
     <>
-      <div className="border-b border-sidebar-border px-4 py-4">
-        <Link to="/" className="flex items-center gap-2.5" onClick={() => setDrawerOpen(false)}>
-          <span className="flex size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-            <GraduationCap className="size-4" />
+      <div className="flex items-center justify-between border-b border-sidebar-border px-4 py-4">
+        <Link to="/" className="flex items-center gap-2.5 overflow-hidden" onClick={() => setDrawerOpen(false)}>
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground overflow-hidden">
+            {user?.school?.logoUrl ? (
+              <img src={user.school.logoUrl} alt="Logo" className="h-full w-full object-cover" />
+            ) : (
+              <GraduationCap className="size-5" />
+            )}
           </span>
-          <span>
-            <span className="block text-base font-semibold leading-none">Gradex</span>
-            <span className="mt-0.5 block text-[11px] text-sidebar-foreground/60">
-              School results automation
+          <div className="flex flex-col gap-0.5 leading-none overflow-hidden">
+            <span className="font-semibold truncate">{user?.school?.name ?? 'GradeX'}</span>
+            <span className="text-[11px] text-muted-foreground line-clamp-1">
+              {user?.role === 'SUPER_ADMIN' ? 'Platform management' : 'School automation'}
             </span>
-          </span>
+          </div>
         </Link>
+        {user?.role === 'ADMIN' && (
+          <Link
+            to="/admin?view=settings"
+            className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            title="School Profile"
+          >
+            <Settings className="size-4" />
+          </Link>
+        )}
       </div>
 
       <nav className="flex-1 space-y-4 overflow-y-auto px-3 pt-3 pb-4">
@@ -154,18 +173,19 @@ export function AppShell() {
           ))}
         </div>
       </nav>
+
     </>
   )
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,var(--background)_0%,oklch(0.96_0.007_250)_100%)] text-foreground flex flex-col md:flex-row">
+    <div className="min-h-screen bg-background text-foreground flex flex-col md:flex-row">
       {/* Desktop Sidebar */}
       <aside className="fixed inset-y-0 left-0 hidden w-72 border-r bg-sidebar text-sidebar-foreground shadow-sm md:flex md:flex-col z-30">
         <SidebarContent />
       </aside>
 
       <div className="flex-1 md:pl-72 flex flex-col min-h-screen">
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b bg-background/90 px-4 backdrop-blur md:px-7">
+        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b bg-background/80 px-4 backdrop-blur md:px-7">
           <div className="flex items-center gap-3">
             <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
               <SheetTrigger asChild>
@@ -185,6 +205,15 @@ export function AppShell() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-muted-foreground"
+              onClick={() => setTheme(isDark ? 'light' : 'dark')}
+              title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            >
+              {isDark ? <Sun className="size-5" /> : <Moon className="size-5" />}
+            </Button>
             <Badge variant="secondary" className="hidden sm:inline-flex">Live school workspace</Badge>
             <Button variant="outline" size="sm" onClick={onLogout} className="hidden sm:flex">
               <LogOut className="mr-2 size-4" />
@@ -196,7 +225,7 @@ export function AppShell() {
           </div>
         </header>
 
-        <main className="flex-1 mx-auto w-full max-w-7xl p-4 md:p-7 pb-24 md:pb-7">
+        <main className="flex-1 mx-auto w-full max-w-screen-2xl p-4 md:p-7 pb-24 md:pb-7">
           <Outlet />
         </main>
       </div>

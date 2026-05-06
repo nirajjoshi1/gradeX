@@ -22,9 +22,14 @@ enum ResultStatus {
 
 model School {
   id        String   @id @default(cuid())
-  name      String
-  address   String?
-  createdAt DateTime @default(now())
+  name        String
+  address     String?
+  logoUrl     String?
+  signatureUrl String?
+  phone       String?
+  email       String?
+  website     String?
+  createdAt   DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   users      User[]
@@ -40,7 +45,7 @@ model User {
   schoolId     String?
   name         String
   username     String   @unique
-  email        String   @unique
+  email        String?  @unique
   passwordHash String
   role         Role
   isActive     Boolean  @default(true)
@@ -181,7 +186,7 @@ model Student {
 
   school  School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  class   Class    @relation(fields: [classId], references: [id], onDelete: Restrict)
+  class   Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
   section Section? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   marks   Mark[]
   results Result[]
@@ -209,7 +214,7 @@ model Mark {
 
   exam    Exam    @relation(fields: [examId], references: [id], onDelete: Cascade)
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
 
   @@unique([examId, studentId, subjectId])
   @@index([schoolId, examId, subjectId])

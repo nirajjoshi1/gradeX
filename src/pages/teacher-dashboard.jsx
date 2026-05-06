@@ -205,6 +205,8 @@ function MarksView() {
   const [sheetData, setSheetData] = useState(null)
   const [entries, setEntries] = useState({})
   const [saving, setSaving] = useState(false)
+  const [loadingOptions, setLoadingOptions] = useState(true)
+  const [loadingSheet, setLoadingSheet] = useState(false)
 
   const selected = useMemo(
     () => examSubjects.find((item) => item.id === selectedId),
@@ -217,31 +219,41 @@ function MarksView() {
   ).length
 
   async function loadOptions() {
-    const items = await api('/teacher/exams')
-    setExamSubjects(items)
-    if (items[0]) setSelectedId(items[0].id)
+    setLoadingOptions(true)
+    try {
+      const items = await api('/teacher/exams')
+      setExamSubjects(items)
+      if (items[0]) setSelectedId(items[0].id)
+    } finally {
+      setLoadingOptions(false)
+    }
   }
 
   const loadSheet = useCallback(async (item) => {
     if (!item) return
-    const data = await api(
-      `/teacher/marks?examId=${item.examId}&classId=${item.classId}&subjectId=${item.subjectId}${item.sectionId ? `&sectionId=${item.sectionId}` : ''}&pageSize=120`,
-    )
-    setSheetData(data)
-    setEntries(
-      Object.fromEntries(
-        data.rows.map(({ student, mark }) => [
-          student.id,
-          {
-            studentId: student.id,
-            theoryMarks: mark?.theoryMarks ?? '',
-            practicalMarks: mark?.practicalMarks ?? '',
-            isAbsent: mark?.isAbsent ?? false,
-            remarks: mark?.remarks ?? '',
-          },
-        ]),
-      ),
-    )
+    setLoadingSheet(true)
+    try {
+      const data = await api(
+        `/teacher/marks?examId=${item.examId}&classId=${item.classId}&subjectId=${item.subjectId}${item.sectionId ? `&sectionId=${item.sectionId}` : ''}&pageSize=120`,
+      )
+      setSheetData(data)
+      setEntries(
+        Object.fromEntries(
+          data.rows.map(({ student, mark }) => [
+            student.id,
+            {
+              studentId: student.id,
+              theoryMarks: mark?.theoryMarks ?? '',
+              practicalMarks: mark?.practicalMarks ?? '',
+              isAbsent: mark?.isAbsent ?? false,
+              remarks: mark?.remarks ?? '',
+            },
+          ]),
+        ),
+      )
+    } finally {
+      setLoadingSheet(false)
+    }
   }, [])
 
   useEffect(() => {
@@ -352,7 +364,13 @@ function MarksView() {
           </div>
         )}
 
-        {!examSubjects.length && (
+        {loadingOptions && (
+          <div className="flex h-40 items-center justify-center">
+            <Loader2 className="size-8 animate-spin text-muted-foreground" />
+          </div>
+        )}
+
+        {!loadingOptions && !examSubjects.length && (
           <div className="rounded-lg border border-dashed p-8 text-center">
             <Sheet className="mx-auto mb-3 size-8 text-muted-foreground" />
             <p className="font-medium">No assigned mark sheets yet</p>
@@ -362,7 +380,13 @@ function MarksView() {
           </div>
         )}
 
-        {!!rows.length && (
+        {!loadingOptions && !!examSubjects.length && loadingSheet && (
+           <div className="flex h-64 items-center justify-center">
+             <Loader2 className="size-8 animate-spin text-primary/50" />
+           </div>
+        )}
+
+        {!loadingOptions && !!rows.length && !loadingSheet && (
           <div className="overflow-hidden rounded-lg border">
             <Table>
               <TableHeader className="bg-muted/70">

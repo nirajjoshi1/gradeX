@@ -37,6 +37,7 @@ function SchoolManagement() {
     name: '',
     address: '',
     adminUsername: '',
+    adminEmail: '',
     adminPassword: '',
   })
 
@@ -64,7 +65,7 @@ function SchoolManagement() {
       })
       toast.success('School and Admin account created successfully')
       setCreateOpen(false)
-      setForms({ name: '', address: '', adminUsername: '', adminPassword: '' })
+      setForms({ name: '', address: '', adminUsername: '', adminEmail: '', adminPassword: '' })
       await load()
     } catch (error) {
       toast.error(error.message)
@@ -207,6 +208,16 @@ function SchoolManagement() {
                       onChange={(e) => setForms({ ...forms, adminUsername: e.target.value.toLowerCase().replace(/\s+/g, '') })}
                       placeholder="e.g. springfield_admin"
                       required
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="adminEmail">Admin Email</Label>
+                    <Input
+                      id="adminEmail"
+                      type="email"
+                      value={forms.adminEmail}
+                      onChange={(e) => setForms({ ...forms, adminEmail: e.target.value })}
+                      placeholder="e.g. principal@school.edu.np"
                     />
                   </div>
                   <div className="grid gap-2">

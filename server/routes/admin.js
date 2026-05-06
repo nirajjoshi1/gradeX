@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import { ADToBS, BSToAD } from 'bikram-sambat-js'
 import { z } from 'zod'
 
+import multer from 'multer'
 import { prisma } from '../db.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import {
@@ -12,8 +13,10 @@ import {
 } from '../services/grading.js'
 import { streamReportCard } from '../services/report-card.js'
 import { HttpError, asyncHandler, validate } from '../utils/http.js'
+import { mapStudentHeaders, mapTeacherHeaders, mapSubjectHeaders, mapClassHeaders, parseExcelBuffer } from '../utils/excel.js'
 
 const router = Router()
+const upload = multer({ storage: multer.memoryStorage() })
 
 router.use(requireAuth, requireRole('ADMIN'))
 
@@ -21,6 +24,16 @@ const id = z.string().min(1)
 const decimal = z.coerce.number().min(0)
 const usernameSchema = z.string().trim().min(3).max(32).regex(/^[a-z0-9._-]+$/i, 'Username may only contain letters, numbers, dot, underscore, and dash')
 const dateTextSchema = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD format')
+
+function getNameSuffix(index) {
+  let suffix = ''
+  let i = index
+  while (i >= 0) {
+    suffix = String.fromCharCode((i % 26) + 65) + suffix
+    i = Math.floor(i / 26) - 1
+  }
+  return suffix
+}
 
 function normalizeDob({ dobAd, dobBs }) {
   const nextDobAd = dobAd?.trim() || null
@@ -404,6 +417,145 @@ router.delete(
   }),
 )
 
+router.post(
+  '/students/bulk',
+  upload.single('file'),
+  asyncHandler(async (req, res) => {
+    const schoolId = req.user.schoolId
+    let rawData = []
+
+    if (req.file) {
+      const parsed = parseExcelBuffer(req.file.buffer)
+      rawData = mapStudentHeaders(parsed)
+    } else if (req.body.students) {
+      rawData = req.body.students
+    } else {
+      throw new HttpError(400, 'No student data provided')
+    }
+
+    if (!rawData.length) {
+      throw new HttpError(400, 'Student list is empty')
+    }
+
+    // Filter out rows that are completely empty
+    const studentsToProcess = rawData.filter(s => s.name || s.admissionNo)
+
+    if (studentsToProcess.length > 1000) {
+      throw new HttpError(400, 'Cannot import more than 1000 students at once')
+    }
+
+    // Fetch all classes and sections for this school to validate
+    const [classes, existingStudents] = await Promise.all([
+      prisma.class.findMany({ where: { schoolId }, include: { sections: true } }),
+      prisma.student.findMany({ 
+        where: { schoolId }, 
+        select: { admissionNo: true, name: true, classId: true, sectionId: true } 
+      })
+    ])
+
+    const classMap = new Map(classes.map(c => [c.id, c]))
+    const classNameMap = new Map(classes.map(c => [c.name.toLowerCase().trim(), c]))
+    const admissionNoSet = new Set(existingStudents.map(s => s.admissionNo))
+    
+    // For duplicate name suffixing logic
+    // We group existing students by class+section to check for collisions
+    const namePool = new Map() // Key: classId_sectionId_lowercaseName, Value: count
+    existingStudents.forEach(s => {
+      const key = `${s.classId}_${s.sectionId ?? 'none'}_${s.name.toLowerCase().trim()}`
+      namePool.set(key, (namePool.get(key) || 0) + 1)
+    })
+
+    const finalStudents = []
+    const errors = []
+
+    studentsToProcess.forEach((s, index) => {
+      const rowNum = index + 1
+      try {
+        if (!s.name) throw new Error('Name is missing')
+        if (!s.admissionNo) throw new Error('Admission No is missing')
+        if (!s.classId) throw new Error('Class ID is missing')
+
+        // 1. Resolve Class
+        let targetClass = classMap.get(s.classId)
+        if (!targetClass && s.classId) {
+          // Try lookup by name
+          targetClass = classNameMap.get(String(s.classId).toLowerCase().trim())
+        }
+
+        if (!targetClass) {
+          throw new Error(`Class "${s.classId}" not found. Please create the class first or check spelling.`)
+        }
+
+        // 2. Resolve Section
+        let targetSection = null
+        if (s.sectionId) {
+          // Try lookup by ID first
+          targetSection = targetClass.sections.find(sec => sec.id === s.sectionId)
+          if (!targetSection) {
+            // Try lookup by Name
+            const searchName = String(s.sectionId).toLowerCase().trim()
+            targetSection = targetClass.sections.find(sec => sec.name.toLowerCase().trim() === searchName)
+          }
+
+          if (!targetSection) {
+            throw new Error(`Section "${s.sectionId}" not found in class ${targetClass.name}`)
+          }
+        }
+
+        if (admissionNoSet.has(String(s.admissionNo))) {
+          throw new Error(`Duplicate Admission No: ${s.admissionNo}`)
+        }
+        admissionNoSet.add(String(s.admissionNo))
+
+        // Duplicate Name Suffixing Logic
+        let finalName = s.name.trim()
+        const nameKey = `${s.classId}_${s.sectionId ?? 'none'}_${finalName.toLowerCase()}`
+        const count = namePool.get(nameKey) || 0
+        
+        if (count > 0) {
+          finalName = `${finalName} '${getNameSuffix(count - 1)}'`
+        }
+        namePool.set(nameKey, count + 1)
+
+        const dob = normalizeDob({ dobAd: s.dobAd, dobBs: s.dobBs })
+
+        finalStudents.push({
+          schoolId,
+          name: finalName,
+          admissionNo: String(s.admissionNo),
+          rollNo: String(s.rollNo || ''),
+          classId: targetClass.id,
+          sectionId: targetSection?.id || null,
+          guardianName: s.guardianName || null,
+          ...dob
+        })
+      } catch (err) {
+        errors.push({ row: rowNum, error: err.message, name: s.name || 'Unknown' })
+      }
+    })
+
+    if (errors.length > 0) {
+      return res.status(400).json({ 
+        message: 'Validation failed for some rows', 
+        errors,
+        totalProcessed: studentsToProcess.length
+      })
+    }
+
+    // Atomic transaction for bulk insertion
+    await prisma.$transaction(
+      finalStudents.map(student => prisma.student.create({ data: student })),
+      { timeout: 60000 }
+    )
+
+    res.json({ 
+      ok: true, 
+      count: finalStudents.length,
+      message: `Successfully imported ${finalStudents.length} students`
+    })
+  }),
+)
+
 router.get(
   '/assignments',
   asyncHandler(async (req, res) => {
@@ -710,6 +862,201 @@ router.get(
 
     await streamReportCard(res, { student, exam, summary })
   }),
+)
+
+// --- TEACHER BULK ---
+router.post(
+  '/teachers/bulk',
+  upload.single('file'),
+  asyncHandler(async (req, res) => {
+    const schoolId = req.user.schoolId
+    let rawData = []
+
+    if (req.file) {
+      const parsed = parseExcelBuffer(req.file.buffer)
+      rawData = mapTeacherHeaders(parsed)
+    } else if (req.body.teachers) {
+      rawData = req.body.teachers
+    } else {
+      throw new HttpError(400, 'No teacher data provided')
+    }
+
+    const teachersToProcess = rawData.filter(t => t.name || t.username)
+    if (!teachersToProcess.length) throw new HttpError(400, 'Teacher list is empty')
+
+    const existingUsers = await prisma.user.findMany({
+      where: {
+        OR: [
+          { username: { in: teachersToProcess.map(t => t.username).filter(Boolean) } },
+          { email: { in: teachersToProcess.map(t => t.email).filter(Boolean) } }
+        ]
+      },
+      select: { username: true, email: true }
+    })
+
+    const usernames = new Set(existingUsers.map(u => u.username))
+    const emails = new Set(existingUsers.map(u => u.email).filter(Boolean))
+
+    const finalTeachers = []
+    const errors = []
+
+    for (const [index, t] of teachersToProcess.entries()) {
+      const rowNum = index + 1
+      try {
+        if (!t.name) throw new Error('Name is missing')
+        if (!t.username) throw new Error('Username is missing')
+        if (usernames.has(t.username)) throw new Error(`Username ${t.username} already taken`)
+        if (t.email && emails.has(t.email)) throw new Error(`Email ${t.email} already taken`)
+
+        const hashedPassword = await bcrypt.hash(t.password || 'Teacher@123', 10)
+        
+        finalTeachers.push({
+          schoolId,
+          name: t.name,
+          username: t.username,
+          email: t.email || null,
+          passwordHash: hashedPassword,
+          role: 'TEACHER'
+        })
+
+        usernames.add(t.username)
+        if (t.email) emails.add(t.email)
+      } catch (err) {
+        errors.push({ row: rowNum, error: err.message, name: t.name || 'Unknown' })
+      }
+    }
+
+    if (errors.length > 0) return res.status(400).json({ errors })
+
+    await prisma.user.createMany({ data: finalTeachers })
+    res.json({ message: `Successfully imported ${finalTeachers.length} teachers` })
+  })
+)
+
+// --- SUBJECT BULK ---
+router.post(
+  '/subjects/bulk',
+  upload.single('file'),
+  asyncHandler(async (req, res) => {
+    const schoolId = req.user.schoolId
+    let rawData = []
+
+    if (req.file) {
+      const parsed = parseExcelBuffer(req.file.buffer)
+      rawData = mapSubjectHeaders(parsed)
+    } else if (req.body.subjects) {
+      rawData = req.body.subjects
+    } else {
+      throw new HttpError(400, 'No subject data provided')
+    }
+
+    const subjectsToProcess = rawData.filter(s => s.name || s.code)
+    if (!subjectsToProcess.length) throw new HttpError(400, 'Subject list is empty')
+
+    const existing = await prisma.subject.findMany({
+      where: { schoolId, code: { in: subjectsToProcess.map(s => s.code).filter(Boolean) } },
+      select: { code: true }
+    })
+    const existingCodes = new Set(existing.map(s => s.code))
+
+    const finalSubjects = []
+    const errors = []
+
+    subjectsToProcess.forEach((s, index) => {
+      const rowNum = index + 1
+      try {
+        if (!s.name) throw new Error('Name is missing')
+        if (!s.code) throw new Error('Code is missing')
+        if (existingCodes.has(s.code)) throw new Error(`Code ${s.code} already exists`)
+
+        finalSubjects.push({
+          schoolId,
+          name: s.name,
+          code: s.code,
+          creditHours: Number(s.creditHours || 4),
+          theoryFullMarks: Number(s.theoryFullMarks || 75),
+          practicalFullMarks: Number(s.practicalFullMarks || 25),
+          passPercentage: Number(s.passPercentage || 40),
+        })
+        existingCodes.add(s.code)
+      } catch (err) {
+        errors.push({ row: rowNum, error: err.message, name: s.name || 'Unknown' })
+      }
+    })
+
+    if (errors.length > 0) return res.status(400).json({ errors })
+
+    await prisma.subject.createMany({ data: finalSubjects })
+    res.json({ message: `Successfully imported ${finalSubjects.length} subjects` })
+  })
+)
+
+// --- CLASS BULK ---
+router.post(
+  '/classes/bulk',
+  upload.single('file'),
+  asyncHandler(async (req, res) => {
+    const schoolId = req.user.schoolId
+    let rawData = []
+
+    if (req.file) {
+      const parsed = parseExcelBuffer(req.file.buffer)
+      rawData = mapClassHeaders(parsed)
+    } else if (req.body.classes) {
+      rawData = req.body.classes
+    } else {
+      throw new HttpError(400, 'No class data provided')
+    }
+
+    const classesToProcess = rawData.filter(c => c.name)
+    if (!classesToProcess.length) throw new HttpError(400, 'Class list is empty')
+
+    const existing = await prisma.class.findMany({
+      where: { schoolId, name: { in: classesToProcess.map(c => c.name).filter(Boolean) } },
+      select: { name: true }
+    })
+    const existingNames = new Set(existing.map(c => c.name))
+
+    const errors = []
+    const validClasses = []
+
+    classesToProcess.forEach((c, index) => {
+      const rowNum = index + 1
+      try {
+        if (!c.name) throw new Error('Name is missing')
+        if (existingNames.has(c.name)) throw new Error(`Class ${c.name} already exists`)
+
+        validClasses.push({
+          name: c.name,
+          sortOrder: Number(c.sortOrder || 0),
+          sections: c.sections || 'A,B'
+        })
+        existingNames.add(c.name)
+      } catch (err) {
+        errors.push({ row: rowNum, error: err.message, name: c.name || 'Unknown' })
+      }
+    })
+
+    if (errors.length > 0) return res.status(400).json({ errors })
+
+    await prisma.$transaction(async (tx) => {
+      for (const c of validClasses) {
+        const sectionNames = c.sections.split(',').map(s => s.trim()).filter(Boolean)
+        await tx.class.create({
+          data: {
+            schoolId,
+            name: c.name,
+            sortOrder: c.sortOrder,
+            sections: {
+              create: sectionNames.map(name => ({ schoolId, name }))
+            }
+          }
+        })
+      }
+    }, { timeout: 60000 })
+
+    res.json({ message: `Successfully imported ${validClasses.length} classes` })
+  })
 )
 
 export default router

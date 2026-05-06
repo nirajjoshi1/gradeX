@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { ADToBS, BSToAD } from 'bikram-sambat-js'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
   BookOpen,
@@ -17,6 +17,15 @@ import {
   Trash2,
   Upload,
   Users,
+  Building2,
+  Globe,
+  Mail,
+  Phone,
+  MapPin,
+  Image as ImageIcon,
+  PenTool,
+  Settings,
+  FileSpreadsheet
 } from 'lucide-react'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -44,6 +53,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -65,7 +75,7 @@ const defaultRules = [
   { label: 'NG', minPercentage: 0, maxPercentage: 39.99, gpa: 0 },
 ]
 
-const adminViews = new Set(['dashboard', 'classes', 'subjects', 'exams', 'teachers', 'students', 'assignments', 'grading', 'publish'])
+const adminViews = new Set(['dashboard', 'classes', 'subjects', 'exams', 'teachers', 'students', 'assignments', 'grading', 'publish', 'settings'])
 
 const initialForms = {
   className: 'Grade 10',
@@ -409,7 +419,17 @@ export function AdminDashboard() {
 
         <TabsContent value="classes" className="mt-0">
           <WorkflowPanel
-            action={<CreateClassDialog editId={editId} forms={forms} setForms={setForms} loading={loading.class} open={openDialog === 'class'} setOpen={(open) => !open ? setOpenDialog(null) : openCreate('class')} onSubmit={saveClass} />}
+            action={
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" asChild>
+                  <Link to="/admin/bulk-import?type=classes" className="gap-2">
+                    <FileSpreadsheet className="w-4 h-4" />
+                    Bulk Import
+                  </Link>
+                </Button>
+                <CreateClassDialog editId={editId} forms={forms} setForms={setForms} loading={loading.class} open={openDialog === 'class'} setOpen={(open) => !open ? setOpenDialog(null) : openCreate('class')} onSubmit={saveClass} />
+              </div>
+            }
             description="Create grade levels and their sections."
             title="Class management"
           >
@@ -419,7 +439,17 @@ export function AdminDashboard() {
 
         <TabsContent value="subjects" className="mt-0">
           <WorkflowPanel
-            action={<CreateSubjectDialog editId={editId} forms={forms} setForms={setForms} loading={loading.subject} open={openDialog === 'subject'} setOpen={(open) => !open ? setOpenDialog(null) : openCreate('subject')} onSubmit={saveSubject} />}
+            action={
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" asChild>
+                  <Link to="/admin/bulk-import?type=subjects" className="gap-2">
+                    <FileSpreadsheet className="w-4 h-4" />
+                    Bulk Import
+                  </Link>
+                </Button>
+                <CreateSubjectDialog editId={editId} forms={forms} setForms={setForms} loading={loading.subject} open={openDialog === 'subject'} setOpen={(open) => !open ? setOpenDialog(null) : openCreate('subject')} onSubmit={saveSubject} />
+              </div>
+            }
             description="Configure full marks, practical marks, and credit hours per subject."
             title="Subject system"
           >
@@ -439,7 +469,17 @@ export function AdminDashboard() {
 
         <TabsContent value="teachers" className="mt-0">
           <WorkflowPanel
-            action={<CreateTeacherDialog editId={editId} forms={forms} setForms={setForms} loading={loading.teacher} open={openDialog === 'teacher'} setOpen={(open) => !open ? setOpenDialog(null) : openCreate('teacher')} onSubmit={saveTeacher} />}
+            action={
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" asChild>
+                  <Link to="/admin/bulk-import?type=teachers" className="gap-2">
+                    <FileSpreadsheet className="w-4 h-4" />
+                    Bulk Import
+                  </Link>
+                </Button>
+                <CreateTeacherDialog editId={editId} forms={forms} setForms={setForms} loading={loading.teacher} open={openDialog === 'teacher'} setOpen={(open) => !open ? setOpenDialog(null) : openCreate('teacher')} onSubmit={saveTeacher} />
+              </div>
+            }
             description="Create teacher accounts and manage their access."
             title="Teacher accounts"
           >
@@ -449,7 +489,17 @@ export function AdminDashboard() {
 
         <TabsContent value="students" className="mt-0">
           <WorkflowPanel
-            action={<CreateStudentDialog editId={editId} forms={forms} setForms={setForms} selected={selected} setSelected={setSelected} classes={data.classes} sections={sectionsForClass} loading={loading.student} open={openDialog === 'student'} setOpen={(open) => !open ? setOpenDialog(null) : openCreate('student')} onSubmit={saveStudent} />}
+            action={
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" asChild>
+                  <Link to="/admin/bulk-import?type=students" className="gap-2">
+                    <FileSpreadsheet className="w-4 h-4" />
+                    Bulk Import
+                  </Link>
+                </Button>
+                <CreateStudentDialog editId={editId} forms={forms} setForms={setForms} selected={selected} setSelected={setSelected} classes={data.classes} sections={sectionsForClass} loading={loading.student} open={openDialog === 'student'} setOpen={(open) => !open ? setOpenDialog(null) : openCreate('student')} onSubmit={saveStudent} />
+              </div>
+            }
             description="Enroll students into class and section records."
             title="Student register"
           >
@@ -504,7 +554,251 @@ export function AdminDashboard() {
             <ReportCardManager exams={data.exams} loading={loading.page} publishing={loading.publish} onFinalize={finalizeExamReports} />
           </WorkflowPanel>
         </TabsContent>
+        <TabsContent value="settings">
+          <SettingsView />
+        </TabsContent>
       </Tabs>
+    </div>
+  )
+}
+
+function SettingsView() {
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [uploadingField, setUploadingField] = useState(null)
+  const [settings, setSettings] = useState({
+    name: '',
+    address: '',
+    phone: '',
+    email: '',
+    website: '',
+    logoUrl: '',
+    signatureUrl: '',
+  })
+
+  // We'll use a hidden input to trigger the system file picker
+  const fileInputRef = useRef(null)
+
+  async function loadSettings() {
+    try {
+      const data = await api('/admin/settings')
+      setSettings({
+        name: data.name || '',
+        address: data.address || '',
+        phone: data.phone || '',
+        email: data.email || '',
+        website: data.website || '',
+        logoUrl: data.logoUrl || '',
+        signatureUrl: data.signatureUrl || '',
+      })
+    } catch (error) {
+      toast.error('Failed to load school settings')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadSettings()
+  }, [])
+
+  async function handleSave(e) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      await api('/admin/settings', {
+        method: 'PATCH',
+        body: JSON.stringify(settings),
+      })
+      toast.success('School settings updated successfully')
+    } catch (error) {
+      toast.error(error.message || 'Failed to save settings')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleNativeUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file || !uploadingField) return
+
+    const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME
+    const uploadPreset = 'gradex_unsigned' // Ensure this is UNSIGNED in Cloudinary
+
+    if (!cloudName) {
+      toast.error('VITE_CLOUDINARY_CLOUD_NAME is missing in .env')
+      return
+    }
+
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('upload_preset', uploadPreset)
+
+    const loadingToast = toast.loading(`Uploading ${uploadingField === 'logoUrl' ? 'Logo' : 'Signature'}...`)
+
+    try {
+      const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+        method: 'POST',
+        body: formData,
+      })
+
+      const data = await response.json()
+      if (data.secure_url) {
+        setSettings(prev => ({ ...prev, [uploadingField]: data.secure_url }))
+        toast.success('Upload complete!', { id: loadingToast })
+      } else {
+        throw new Error(data.error?.message || 'Upload failed')
+      }
+    } catch (error) {
+      toast.error(error.message, { id: loadingToast })
+    } finally {
+      setUploadingField(null)
+      e.target.value = '' // Reset input
+    }
+  }
+
+  const triggerPicker = (field) => {
+    setUploadingField(field)
+    fileInputRef.current?.click()
+  }
+
+
+  if (loading) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="size-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">School Profile</h2>
+          <p className="text-muted-foreground">Customize your school branding and contact details.</p>
+        </div>
+        <Button type="submit" form="settings-form" disabled={saving}>
+          {saving ? 'Saving...' : 'Save Settings'}
+          <Save className="ml-2 size-4" />
+        </Button>
+      </div>
+
+      <form id="settings-form" onSubmit={handleSave} className="grid gap-6 sm:grid-cols-2">
+        <Card className="sm:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Building2 className="size-5 text-primary" /> General Identity
+            </CardTitle>
+            <CardDescription>Primary details displayed on reports and sidebar.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-6 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <Label htmlFor="name">School Name</Label>
+              <Input
+                id="name"
+                value={settings.name}
+                onChange={e => setSettings({ ...settings, name: e.target.value })}
+                required
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="address">Address</Label>
+              <Input
+                id="address"
+                value={settings.address}
+                onChange={e => setSettings({ ...settings, address: e.target.value })}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="phone">Phone Number</Label>
+              <div className="relative">
+                <Phone className="absolute left-3 top-3 size-4 text-muted-foreground" />
+                <Input
+                  id="phone"
+                  className="pl-9"
+                  value={settings.phone}
+                  onChange={e => setSettings({ ...settings, phone: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="email">Email Address</Label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-3 size-4 text-muted-foreground" />
+                <Input
+                  id="email"
+                  type="email"
+                  className="pl-9"
+                  value={settings.email}
+                  onChange={e => setSettings({ ...settings, email: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="grid gap-2 sm:col-span-2">
+              <Label htmlFor="website">Website URL</Label>
+              <div className="relative">
+                <Globe className="absolute left-3 top-3 size-4 text-muted-foreground" />
+                <Input
+                  id="website"
+                  className="pl-9"
+                  value={settings.website}
+                  onChange={e => setSettings({ ...settings, website: e.target.value })}
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <ImageIcon className="size-5 text-primary" /> Logo
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col items-center justify-center">
+            <div className="relative mb-4 flex size-32 items-center justify-center overflow-hidden rounded-xl border-2 border-dashed bg-muted/50">
+              {settings.logoUrl ? (
+                <img src={settings.logoUrl} alt="Logo" className="h-full w-full object-contain p-2" />
+              ) : (
+                <ImageIcon className="size-8 text-muted-foreground" />
+              )}
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={() => triggerPicker('logoUrl')}>
+              Upload Logo
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <PenTool className="size-5 text-primary" /> Signature
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col items-center justify-center">
+            <div className="relative mb-4 flex h-32 w-full items-center justify-center overflow-hidden rounded-xl border-2 border-dashed bg-muted/50">
+              {settings.signatureUrl ? (
+                <img src={settings.signatureUrl} alt="Signature" className="h-full w-full object-contain p-2" />
+              ) : (
+                <PenTool className="size-8 text-muted-foreground" />
+              )}
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={() => triggerPicker('signatureUrl')}>
+              Upload Signature
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* Hidden File Input */}
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          className="hidden" 
+          accept="image/*"
+          onChange={handleNativeUpload} 
+        />
+      </form>
     </div>
   )
 }
@@ -1032,6 +1326,7 @@ function GradeRuleEditor({ rules, updateRule }) {
 function ReportCardManager({ exams, loading, publishing, onFinalize }) {
   const [selectedExamId, setSelectedExamId] = useState('')
   const [payload, setPayload] = useState(null)
+  const [fetching, setFetching] = useState(false)
 
   useEffect(() => {
     const nextId = exams[0]?.id ?? ''
@@ -1044,9 +1339,11 @@ function ReportCardManager({ exams, loading, publishing, onFinalize }) {
       return
     }
 
+    setFetching(true)
     api(`/admin/exams/${selectedExamId}/report-cards`)
       .then(setPayload)
       .catch((error) => toast.error(error.message))
+      .finally(() => setFetching(false))
   }, [selectedExamId, publishing])
 
   return (
@@ -1084,7 +1381,9 @@ function ReportCardManager({ exams, loading, publishing, onFinalize }) {
           <TableHeader><TableRow><TableHead>Student</TableHead><TableHead>Class</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Print</TableHead></TableRow></TableHeader>
           <TableBody>
             {!selectedExamId && <EmptyRows loading={loading} label="No exams available." />}
-            {selectedExamId && !payload?.students?.length && <EmptyRows loading={loading} label="No student report cards for this exam yet." />}
+            {selectedExamId && !payload?.students?.length && (
+              <EmptyRows loading={loading || fetching} label={fetching ? "Loading report cards..." : "No student report cards for this exam yet."} />
+            )}
             {payload?.students?.map((student) => (
               <TableRow key={student.id}>
                 <TableCell>

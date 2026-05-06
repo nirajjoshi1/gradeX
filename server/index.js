@@ -11,6 +11,7 @@ import authRoutes from './routes/auth.js'
 import studentRoutes from './routes/student.js'
 import superAdminRoutes from './routes/super-admin.js'
 import teacherRoutes from './routes/teacher.js'
+import settingsRoutes from './routes/settings.js'
 
 const app = express()
 
@@ -32,6 +33,7 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/auth', authRoutes)
 app.use('/api/super-admin', superAdminRoutes)
 app.use('/api/admin', adminRoutes)
+app.use('/api/admin/settings', settingsRoutes)
 app.use('/api/teacher', teacherRoutes)
 app.use('/api/student', studentRoutes)
 
@@ -46,14 +48,10 @@ app.use((err, _req, res, _next) => {
   res.status(status).json({ error: message })
 })
 
-const server = app.listen(env.port, () => {
-  console.log(`Gradex API listening on http://localhost:${env.port}`)
-})
-
-async function shutdown() {
-  server.close()
-  await prisma.$disconnect()
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+  app.listen(env.port, () => {
+    console.log(`Gradex API listening on http://localhost:${env.port}`)
+  })
 }
 
-process.on('SIGINT', shutdown)
-process.on('SIGTERM', shutdown)
+export default app

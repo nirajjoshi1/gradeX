@@ -48,6 +48,7 @@ export const requireAuth = asyncHandler(async (req, _res, next) => {
 
   const user = await prisma.user.findFirst({
     where: { id: payload.sub, isActive: true },
+    include: { school: true },
   })
 
   if (!user) {

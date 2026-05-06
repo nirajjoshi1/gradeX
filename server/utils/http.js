@@ -32,5 +32,6 @@ export function pickUser(user) {
     email: user.email,
     role: user.role,
     schoolId: user.schoolId,
+    school: user.school,
   }
 }

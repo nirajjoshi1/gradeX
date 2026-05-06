@@ -1,12 +1,15 @@
 import { useEffect } from 'react'
+import { GraduationCap } from 'lucide-react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { Toaster } from 'sonner'
 
 import { AppShell } from '@/components/layout/app-shell'
+import { ThemeProvider } from '@/components/theme-provider'
 import { AdminDashboard } from '@/pages/admin-dashboard'
 import { LoginPage } from '@/pages/login'
 import { SuperAdminDashboard } from '@/pages/super-admin-dashboard'
 import { TeacherDashboard } from '@/pages/teacher-dashboard'
+import BulkImport from '@/pages/bulk-import'
 import { useAuthStore } from '@/stores/auth-store'
 
 const homeByRole = {
@@ -19,7 +22,23 @@ function RequireAuth({ role, children }) {
   const { user, loading } = useAuthStore()
 
   if (loading) {
-    return <div className="grid min-h-screen place-items-center text-sm text-muted-foreground">Loading...</div>
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background">
+        <div className="relative flex items-center justify-center">
+          <div className="absolute size-16 animate-ping rounded-full bg-primary/20" />
+          <div className="relative flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg">
+            <GraduationCap className="size-6 animate-bounce" />
+          </div>
+        </div>
+        <div className="mt-8 flex flex-col items-center gap-2">
+          <h1 className="text-xl font-bold tracking-tight text-foreground">GradeX</h1>
+          <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-widest">
+            <span className="inline-block size-1 animate-pulse rounded-full bg-primary" />
+            Initializing Workspace
+          </div>
+        </div>
+      </div>
+    )
   }
 
   if (!user) return <Navigate to="/login" replace />
@@ -36,24 +55,27 @@ function App() {
   }, [loadMe])
 
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route
-          element={
-            <RequireAuth>
-              <AppShell />
-            </RequireAuth>
-          }
-        >
-          <Route path="/super-admin" element={<RequireAuth role="SUPER_ADMIN"><SuperAdminDashboard /></RequireAuth>} />
-          <Route path="/admin" element={<RequireAuth role="ADMIN"><AdminDashboard /></RequireAuth>} />
-          <Route path="/teacher" element={<RequireAuth role="TEACHER"><TeacherDashboard /></RequireAuth>} />
-        </Route>
-        <Route path="*" element={<Navigate to={user ? homeByRole[user.role] : '/login'} replace />} />
-      </Routes>
-      <Toaster richColors />
-    </BrowserRouter>
+    <ThemeProvider defaultTheme="light" storageKey="gradex-theme" attribute="class">
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route
+            element={
+              <RequireAuth>
+                <AppShell />
+              </RequireAuth>
+            }
+          >
+            <Route path="/super-admin" element={<RequireAuth role="SUPER_ADMIN"><SuperAdminDashboard /></RequireAuth>} />
+            <Route path="/admin" element={<RequireAuth role="ADMIN"><AdminDashboard /></RequireAuth>} />
+            <Route path="/admin/bulk-import" element={<RequireAuth role="ADMIN"><BulkImport /></RequireAuth>} />
+            <Route path="/teacher" element={<RequireAuth role="TEACHER"><TeacherDashboard /></RequireAuth>} />
+          </Route>
+          <Route path="*" element={<Navigate to={user ? homeByRole[user.role] : '/login'} replace />} />
+        </Routes>
+        <Toaster richColors closeButton />
+      </BrowserRouter>
+    </ThemeProvider>
   )
 }
 

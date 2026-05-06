@@ -58,7 +58,7 @@ export function calculateSubjectResult(mark, subject, rules) {
     finalGpa: finalGrade ? Number(finalGrade.gpa) : 0,
     weightedGpa: (finalGrade ? Number(finalGrade.gpa) : 0) * number(subject.creditHours),
     status: isPass ? 'PASS' : 'FAIL',
-    remarks: mark.remarks ?? (isPass ? 'Pass' : 'Fail'),
+    remarks: mark.remarks || finalGrade?.remarks || (isPass ? 'Pass' : 'Fail'),
   }
 }
 
