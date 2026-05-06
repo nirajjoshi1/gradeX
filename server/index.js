@@ -12,6 +12,7 @@ import studentRoutes from './routes/student.js'
 import superAdminRoutes from './routes/super-admin.js'
 import teacherRoutes from './routes/teacher.js'
 import settingsRoutes from './routes/settings.js'
+import publicRoutes from './routes/public.js'
 
 const app = express()
 
@@ -36,6 +37,7 @@ app.use('/api/admin', adminRoutes)
 app.use('/api/admin/settings', settingsRoutes)
 app.use('/api/teacher', teacherRoutes)
 app.use('/api/student', studentRoutes)
+app.use('/api/public', publicRoutes)
 
 app.use((err, _req, res, _next) => {
   const status = err.status ?? 500

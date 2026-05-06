@@ -6,7 +6,7 @@ export function NotFoundPage() {
   const navigate = useNavigate()
   const { schoolSlug } = useParams()
 
-  const homePath = schoolSlug ? `/${schoolSlug}/login` : '/'
+  const homePath = '/'
 
   return (
     <main className="relative min-h-screen overflow-hidden flex items-center justify-center px-4 py-10">

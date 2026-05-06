@@ -76,8 +76,12 @@ router.post(
     if (schoolSlug && !reserved.includes(schoolSlug)) {
       if (user.role === 'SUPER_ADMIN') {
         // Super admin can only log in through /super-admin (global) or we can allow them anywhere
-        // But per requirements, let's keep it strict
       } else if (!user.school || user.school.slug !== schoolSlug) {
+        throw new HttpError(401, 'Invalid username or password')
+      }
+    } else if (!schoolSlug || reserved.includes(schoolSlug)) {
+      // Root login or reserved path - only SUPER_ADMIN allowed
+      if (user.role !== 'SUPER_ADMIN') {
         throw new HttpError(401, 'Invalid username or password')
       }
     }

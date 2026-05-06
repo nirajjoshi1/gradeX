@@ -334,11 +334,7 @@ export function AdminDashboard() {
                   School overview, progress tracking, and quick counts live here only.
                 </p>
               </div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:w-[26rem]">
-                {stats.slice(0, 3).map((stat) => (
-                  <MetricTile key={stat.label} {...stat} loading={loading.page} compact />
-                ))}
-              </div>
+
             </div>
           </section>
 

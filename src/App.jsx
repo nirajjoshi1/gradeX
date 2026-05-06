@@ -7,6 +7,7 @@ import { AppShell } from '@/components/layout/app-shell'
 import { ThemeProvider } from '@/components/theme-provider'
 import { AdminDashboard } from '@/pages/admin-dashboard'
 import { LoginPage } from '@/pages/login'
+import { LandingPage } from '@/pages/landing'
 import { SuperAdminDashboard } from '@/pages/super-admin-dashboard'
 import { TeacherDashboard } from '@/pages/teacher-dashboard'
 import { NotFoundPage } from '@/pages/error-page'
@@ -76,8 +77,11 @@ function App() {
     <ThemeProvider defaultTheme="light" storageKey="gradex-theme" attribute="class">
       <BrowserRouter>
         <Routes>
-          {/* Public landing or redirect */}
-          <Route path="/" element={<Navigate to="/demo/login" replace />} />
+          {/* Public Landing Page */}
+          <Route path="/" element={<LandingPage />} />
+          
+          {/* General/Super Admin Login */}
+          <Route path="/login" element={<LoginPage />} />
           
           {/* Super Admin with Shell - Placed ABOVE greedy schoolSlug */}
           <Route

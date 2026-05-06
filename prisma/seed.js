@@ -1,176 +1,210 @@
 import bcrypt from 'bcryptjs'
-
 import { prisma } from '../server/db.js'
 
 async function main() {
+  console.log('🚀 Starting deep seed...')
+  
   const passwordHash = await bcrypt.hash('password123', 12)
 
-  const school = await prisma.school.upsert({
-    where: { id: 'seed-school' },
-    update: {},
-    create: {
-      id: 'seed-school',
-      name: 'Gradex Demonstration School',
-      address: 'Kathmandu',
-    },
-  })
+  // 1. CLEAR EVERYTHING (Order matters for foreign keys)
+  console.log('🧹 Wiping existing data...')
+  await prisma.mark.deleteMany()
+  await prisma.examSubject.deleteMany()
+  await prisma.exam.deleteMany()
+  await prisma.teacherAssignment.deleteMany()
+  await prisma.student.deleteMany()
+  await prisma.subject.deleteMany()
+  await prisma.section.deleteMany()
+  await prisma.class.deleteMany()
+  await prisma.gradeRule.deleteMany()
+  await prisma.user.deleteMany()
+  await prisma.school.deleteMany()
 
-  const superAdmin = await prisma.user.upsert({
-    where: { username: 'superadmin' },
-    update: {},
-    create: {
-      name: 'Global System Admin',
+  // 2. CREATE SUPER ADMIN
+  console.log('👑 Creating Super Admin...')
+  await prisma.user.create({
+    data: {
+      name: 'GradeX Master',
       username: 'superadmin',
-      email: 'superadmin@gradex.local',
+      email: 'master@gradex.io',
       passwordHash,
       role: 'SUPER_ADMIN',
     },
   })
 
-  const admin = await prisma.user.upsert({
-    where: { email: 'admin@gradex.local' },
-    update: {},
-    create: {
+  // 3. CREATE DEMO SCHOOL
+  console.log('🏫 Creating Demo School...')
+  const school = await prisma.school.create({
+    data: {
+      name: 'St. Marys International Academy',
+      slug: 'demo',
+      address: 'Kathmandu, Nepal',
+      logoUrl: 'https://images.unsplash.com/photo-1546410531-bb4caa6b424d?auto=format&fit=crop&q=80&w=200&h=200',
+    },
+  })
+
+  // 4. CREATE SCHOOL ADMIN
+  await prisma.user.create({
+    data: {
       schoolId: school.id,
-      name: 'Principal Admin',
+      name: 'Dr. Sarah Wilson',
       username: 'admin',
-      email: 'admin@gradex.local',
+      email: 'sarah@demo.edu',
       passwordHash,
       role: 'ADMIN',
     },
   })
 
-  const teacher = await prisma.user.upsert({
-    where: { email: 'teacher@gradex.local' },
-    update: {},
-    create: {
+  // 5. CREATE TEACHERS
+  const teacherA = await prisma.user.create({
+    data: {
       schoolId: school.id,
-      name: 'Science Teacher',
+      name: 'John Miller',
       username: 'teacher',
-      email: 'teacher@gradex.local',
+      email: 'john@demo.edu',
       passwordHash,
       role: 'TEACHER',
     },
   })
 
-  const grade10 = await prisma.class.upsert({
-    where: { schoolId_name: { schoolId: school.id, name: 'Grade 10' } },
-    update: {},
-    create: { schoolId: school.id, name: 'Grade 10', sortOrder: 10 },
-  })
-
-  const sectionA = await prisma.section.upsert({
-    where: { classId_name: { classId: grade10.id, name: 'A' } },
-    update: {},
-    create: { schoolId: school.id, classId: grade10.id, name: 'A' },
-  })
-
-  const science = await prisma.subject.upsert({
-    where: { schoolId_code: { schoolId: school.id, code: 'SCI10' } },
-    update: {},
-    create: {
+  const teacherB = await prisma.user.create({
+    data: {
       schoolId: school.id,
-      code: 'SCI10',
-      name: 'Science',
-      creditHours: 4,
-      theoryFullMarks: 75,
-      practicalFullMarks: 25,
-      passPercentage: 40,
+      name: 'Emily Davis',
+      username: 'emily',
+      email: 'emily@demo.edu',
+      passwordHash,
+      role: 'TEACHER',
     },
   })
 
-  await prisma.student.upsert({
-    where: { schoolId_admissionNo: { schoolId: school.id, admissionNo: 'GDX-001' } },
-    update: {},
-    create: {
-      schoolId: school.id,
-      classId: grade10.id,
-      sectionId: sectionA.id,
-      admissionNo: 'GDX-001',
-      rollNo: '1',
-      name: 'Aarav Student',
-      guardianName: 'Guardian',
-    },
+  // 6. CREATE CLASSES & SECTIONS
+  console.log('📚 Setting up curriculum...')
+  const class10 = await prisma.class.create({
+    data: { schoolId: school.id, name: 'Grade 10', sortOrder: 10 },
   })
 
-  const existingAssignment = await prisma.teacherAssignment.findFirst({
-    where: {
-      schoolId: school.id,
-      teacherId: teacher.id,
-      classId: grade10.id,
-      sectionId: sectionA.id,
-      subjectId: science.id,
-    },
+  const sectionA = await prisma.section.create({
+    data: { schoolId: school.id, classId: class10.id, name: 'A' },
   })
 
-  if (!existingAssignment) {
-    await prisma.teacherAssignment.create({
-      data: {
-        schoolId: school.id,
-        teacherId: teacher.id,
-        classId: grade10.id,
-        sectionId: sectionA.id,
-        subjectId: science.id,
-      },
-    })
-  }
-
-  const exam = await prisma.exam.upsert({
-    where: { schoolId_name: { schoolId: school.id, name: 'Midterm' } },
-    update: {},
-    create: { schoolId: school.id, name: 'Midterm' },
-  })
-
-  await prisma.examSubject.upsert({
-    where: {
-      examId_classId_subjectId: {
-        examId: exam.id,
-        classId: grade10.id,
-        subjectId: science.id,
-      },
-    },
-    update: {},
-    create: {
-      schoolId: school.id,
-      examId: exam.id,
-      classId: grade10.id,
-      subjectId: science.id,
-    },
-  })
-
-  const rules = [
-    ['A+', 90, 100, 4],
-    ['A', 80, 89.99, 3.6],
-    ['B+', 70, 79.99, 3.2],
-    ['B', 60, 69.99, 2.8],
-    ['C+', 50, 59.99, 2.4],
-    ['C', 40, 49.99, 2],
-    ['NG', 0, 39.99, 0],
+  // 7. CREATE SUBJECTS
+  const subjectsData = [
+    { name: 'Mathematics', code: 'MATH10', credit: 4, th: 75, pr: 25 },
+    { name: 'Science', code: 'SCI10', credit: 4, th: 75, pr: 25 },
+    { name: 'English', code: 'ENG10', credit: 4, th: 100, pr: 0 },
+    { name: 'Social Studies', code: 'SOC10', credit: 4, th: 75, pr: 25 },
   ]
 
-  await prisma.gradeRule.deleteMany({ where: { schoolId: school.id } })
-  await prisma.gradeRule.createMany({
-    data: rules.map(([label, minPercentage, maxPercentage, gpa], sortOrder) => ({
-      schoolId: school.id,
-      label,
-      minPercentage,
-      maxPercentage,
-      gpa,
-      sortOrder,
-    })),
+  const subjects = []
+  for (const s of subjectsData) {
+    const subject = await prisma.subject.create({
+      data: {
+        schoolId: school.id,
+        name: s.name,
+        code: s.code,
+        creditHours: s.credit,
+        theoryFullMarks: s.th,
+        practicalFullMarks: s.pr,
+        passPercentage: 40,
+      }
+    })
+    subjects.push(subject)
+  }
+
+  // 8. ASSIGN TEACHERS
+  await prisma.teacherAssignment.createMany({
+    data: [
+      { schoolId: school.id, teacherId: teacherA.id, classId: class10.id, sectionId: sectionA.id, subjectId: subjects[0].id },
+      { schoolId: school.id, teacherId: teacherA.id, classId: class10.id, sectionId: sectionA.id, subjectId: subjects[1].id },
+      { schoolId: school.id, teacherId: teacherB.id, classId: class10.id, sectionId: sectionA.id, subjectId: subjects[2].id },
+    ]
   })
 
-  console.log('Seed complete')
+  // 9. CREATE STUDENTS
+  console.log('👥 Onboarding students...')
+  const names = ['Ethan Hunt', 'Jane Watson', 'Peter Parker', 'Bruce Wayne', 'Diana Prince']
+  const students = []
+  for (let i = 0; i < names.length; i++) {
+    const student = await prisma.student.create({
+      data: {
+        schoolId: school.id,
+        classId: class10.id,
+        sectionId: sectionA.id,
+        admissionNo: `GDX-2026-${100 + i}`,
+        rollNo: `${i + 1}`,
+        name: names[i],
+        guardianName: 'Representative Guardian',
+      }
+    })
+    students.push(student)
+  }
+
+  // 10. GRADING RULES
+  console.log('📊 Setting grading rules...')
+  const rules = [
+    { label: 'A+', min: 90, max: 100, gpa: 4.0 },
+    { label: 'A', min: 80, max: 89.99, gpa: 3.6 },
+    { label: 'B+', min: 70, max: 79.99, gpa: 3.2 },
+    { label: 'B', min: 60, max: 69.99, gpa: 2.8 },
+    { label: 'C+', min: 50, max: 59.99, gpa: 2.4 },
+    { label: 'C', min: 40, max: 49.99, gpa: 2.0 },
+    { label: 'D', min: 35, max: 39.99, gpa: 1.6 },
+    { label: 'NG', min: 0, max: 34.99, gpa: 0.0 },
+  ]
+
+  await prisma.gradeRule.createMany({
+    data: rules.map((r, i) => ({
+      schoolId: school.id,
+      label: r.label,
+      minPercentage: r.min,
+      maxPercentage: r.max,
+      gpa: r.gpa,
+      sortOrder: i,
+    }))
+  })
+
+  // 11. EXAMS & INITIAL MARKS
+  console.log('✍️ Generating sample marks...')
+  const midterm = await prisma.exam.create({
+    data: { schoolId: school.id, name: 'First Terminal Examination' }
+  })
+
+  // Get the admin user we just created to be the "enteredBy" reference
+  const adminUser = await prisma.user.findUnique({ where: { username: 'admin' } })
+
+  for (const subject of subjects) {
+    await prisma.examSubject.create({
+      data: { schoolId: school.id, examId: midterm.id, classId: class10.id, subjectId: subject.id }
+    })
+
+    // Add random marks for each student
+    for (const student of students) {
+      await prisma.mark.create({
+        data: {
+          schoolId: school.id,
+          examId: midterm.id,
+          studentId: student.id,
+          subjectId: subject.id,
+          theoryMarks: Math.floor(Math.random() * (subject.theoryFullMarks - 30) + 30),
+          practicalMarks: subject.practicalFullMarks > 0 ? Math.floor(Math.random() * 10 + 15) : 0,
+          enteredById: adminUser.id, // Fixed: Added required field
+        }
+      })
+    }
+  }
+
+  console.log('\n✅ SEED COMPLETED SUCCESSFULLY')
+  console.log('--------------------------------')
   console.log('Super Admin: superadmin / password123')
-  console.log('Admin: admin / password123')
-  console.log('Teacher: teacher / password123')
-  void superAdmin
-  void admin
+  console.log('Demo School Admin: admin / password123 (at /demo/login)')
+  console.log('Demo Teacher: teacher / password123 (at /demo/login)')
+  console.log('--------------------------------\n')
 }
 
 main()
-  .catch((error) => {
-    console.error(error)
+  .catch((e) => {
+    console.error(e)
     process.exit(1)
   })
   .finally(async () => {
